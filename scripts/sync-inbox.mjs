@@ -188,7 +188,7 @@ async function main() {
       } catch {}
     }, 5000);
 
-    // Regular interval sync every 60 seconds
+    // Regular interval sync every 30 seconds (half minute)
     setInterval(async () => {
       try {
         lastSyncTime = Date.now();
@@ -196,7 +196,17 @@ async function main() {
       } catch (err) {
         console.error('Watch loop error:', err.message);
       }
-    }, 60000);
+    }, 30000);
+
+    // Lightweight HTTP server for Render / cloud health checks
+    const port = process.env.PORT || 10000;
+    const http = await import('http');
+    http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'firemail-sync', interval: '30s', time: new Date().toISOString() }));
+    }).listen(port, () => {
+      console.log(`🌐 Health check server listening on port ${port}`);
+    });
   }
 }
 
