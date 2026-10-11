@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#132824">
+  <meta name="description" content="A private home for your Gmail accounts. One dashboard, every inbox.">
+  <title>Firemail AI — your private inbox</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="gate" class="gate">
+    <section class="gate-story" aria-label="Welcome to Firemail AI">
+      <a class="brand gate-brand" href="/" aria-label="Firemail AI home"><span class="brand-mark" data-icon="mail"></span><span>firemail<span class="brand-dot">ai.</span></span></a>
+      <div class="gate-copy"><span class="eyebrow light">YOUR EMAIL, TOGETHER</span><h1>Every inbox.<br>One quiet place.</h1><p>Read, reply, and keep your Gmail accounts organized from your own private dashboard.</p></div>
+      <div class="mail-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card art-back"><span></span><span></span></div><div class="art-card art-front"><div class="art-check" data-icon="check"></div><div class="art-avatar"></div><div class="art-lines"><span></span><span></span><span></span></div><div class="art-note">All your accounts. A little more calm.</div></div><span class="art-spark spark-one">✦</span><span class="art-spark spark-two">✦</span></div>
+      <div class="gate-foot"><span data-icon="shield"></span> Private by design. Hosted by you.</div>
+    </section>
+    <section class="gate-panel">
+      <div class="gate-card">
+        <div class="gate-icon" data-icon="lock"></div>
+        <span class="eyebrow">YOUR PRIVATE WORKSPACE</span>
+        <h2 id="gate-title">Dashboard Lock</h2>
+        <p id="gate-description">Enter your master passcode to unlock Firemail AI and access all stored accounts.</p>
+        <div id="gate-notice" class="notice" hidden></div>
+        <form id="unlock-form">
+          <label for="passcode">Dashboard passcode</label>
+          <div class="password-field"><input id="passcode" name="passcode" type="password" minlength="4" maxlength="128" autocomplete="current-password" required placeholder="Enter your master passcode"><button type="button" class="icon-button" id="toggle-passcode" aria-label="Show passcode" data-icon="eye"></button></div>
+          <div id="confirm-field" hidden><label for="confirm-passcode">Confirm passcode</label><input id="confirm-passcode" name="confirm" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Enter it once more"></div>
+          <p class="field-hint" id="lock-hint">Stored in Firebase RTDB. Locks after 10 minutes of inactivity.</p>
+          <button class="button primary wide" id="unlock-button" type="submit">Unlock dashboard <span data-icon="arrow-right"></span></button>
+        </form>
+        <p class="gate-small">Your Gmail accounts and master passcode lock are stored directly in Firebase Realtime Database.</p>
+      </div>
+      <span class="gate-copyright">FIREMAIL AI · YOUR PRIVATE INBOX</span>
+    </section>
+  </div>
+
+  <div id="workspace" class="workspace" hidden>
+    <aside id="sidebar" class="sidebar">
+      <a class="brand" href="/" aria-label="Firemail AI home"><span class="brand-mark" data-icon="mail"></span><span>firemail<span class="brand-dot">ai.</span></span></a>
+      <button class="compose-button" id="compose-button"><span data-icon="plus"></span> Compose <kbd>C</kbd></button>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav class="folder-nav" aria-label="Mail folders">
+        <button class="nav-item active" data-folder="INBOX"><span data-icon="inbox"></span><span>Inbox</span><span id="unread-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-folder="STARRED"><span data-icon="star"></span><span>Starred</span></button>
+        <button class="nav-item" data-folder="SENT"><span data-icon="send"></span><span>Sent</span></button>
+        <button class="nav-item" data-folder="DRAFT"><span data-icon="file"></span><span>Drafts</span></button>
+        <button class="nav-item" data-folder="ALL"><span data-icon="layers"></span><span>All mail</span></button>
+        <button class="nav-item" data-folder="SPAM"><span data-icon="alert"></span><span>Spam</span></button>
+        <button class="nav-item" data-folder="TRASH"><span data-icon="trash"></span><span>Trash</span></button>
+      </nav>
+      <div class="sidebar-label account-heading">YOUR ACCOUNTS<button id="connect-sidebar" class="icon-button light" aria-label="Connect a Gmail account" data-icon="plus"></button></div>
+      <div id="account-nav" class="account-nav"></div>
+      <div class="sidebar-bottom"><button id="settings-button" class="nav-item"><span data-icon="settings"></span><span>Accounts & lock</span></button><div class="secure-label"><span class="status-dot"></span> Private workspace<button id="lock-button" class="icon-button light" data-icon="lock" aria-label="Lock dashboard"></button></div></div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left"><button id="menu-toggle" class="icon-button mobile-only" data-icon="menu" aria-label="Open navigation"></button><span class="topbar-label">Your workspace</span><span class="topbar-slash">/</span><span id="breadcrumb">All accounts</span></div>
+        <div class="topbar-right"><span id="demo-badge" class="demo-badge" hidden>DEMO · SAMPLE MAIL</span><span id="session-label" class="session-label">Unlocked</span><button id="profile-button" class="profile-avatar" aria-label="Account and sign-out options">FY</button></div>
+      </header>
+      <section class="mail-area" id="mail-area">
+        <div class="page-heading"><div><span class="eyebrow">A LITTLE MORE ORGANIZED</span><h1 id="folder-title">Inbox<span class="heading-dot">.</span></h1><p id="folder-description">All your conversations, in one place.</p></div><button id="connect-main" class="button secondary"><span data-icon="plus"></span> Connect Gmail</button></div>
+        <form class="searchbar" id="search-form"><span data-icon="search"></span><input id="search" type="search" autocomplete="off" placeholder="Search mail — try from:someone or has:attachment" aria-label="Search Gmail"><span class="search-key">/</span><button class="button small secondary" type="submit">Search</button></form>
+        <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
+        <div class="message-layout" id="message-layout"><section class="message-list-wrap" aria-label="Messages"><div id="inbox-errors" class="inbox-errors" hidden></div><div id="message-list" class="message-list"></div><button id="load-more" class="button subtle load-more" hidden>Load more messages</button></section><section class="reader" id="reader" aria-label="Conversation" hidden></section></div>
+        <footer class="mail-footer"><span><span data-icon="shield"></span> Only your approved administrators can access this workspace</span><span id="sync-time">Ready when you are</span></footer>
+      </section>
+      <section id="settings-area" class="settings-area" hidden>
+        <div class="page-heading"><div><span class="eyebrow">YOUR WORKSPACE, YOUR CONTROL</span><h1>Accounts & lock<span class="heading-dot">.</span></h1><p>Connect inboxes and manage your saved account details.</p></div><button id="back-inbox" class="button secondary"><span data-icon="arrow-left"></span> Back to inbox</button></div>
+        <div class="settings-grid"><section class="settings-card"><div class="card-heading"><div><h2>Gmail accounts</h2><p>Saved details and connected inboxes.</p></div><button id="add-account" class="button primary small"><span data-icon="plus"></span> Add account</button></div><div id="settings-accounts"></div><div class="settings-note"><span data-icon="info"></span><p>Saved passwords are encrypted. Gmail inbox access uses Google authorization, so you only connect each account once.</p></div></section>
+        <section class="settings-card lock-card"><div class="card-symbol" data-icon="lock"></div><h2>Dashboard lock</h2><p>Your passcode is stored as a secure verifier in RTDB. Each unlock expires after 30 minutes; idle tabs lock after 10.</p><button id="change-lock" class="button secondary wide">Change passcode</button><button id="settings-lock" class="button subtle wide">Lock now</button></section>
+        <section class="settings-card audit-card"><div class="card-heading"><div><h2>Recent activity</h2><p>Account changes, password reveals, and outgoing mail.</p></div><span data-icon="activity"></span></div><div id="audit-list"></div></section></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="compose-dialog" class="compose-dialog">
+    <form id="compose-form">
+      <div class="dialog-header"><div><span class="eyebrow">A NEW CONVERSATION</span><h2 id="compose-title">New message</h2></div><button id="compose-close" type="button" class="icon-button" data-icon="x" aria-label="Close compose"></button></div>
+      <div class="compose-fields"><label class="compose-row">From<select id="compose-from" required></select></label><label class="compose-row">To<input id="compose-to" placeholder="email@example.com, another@example.com" autocomplete="off"></label><div class="cc-toggle"><button id="toggle-cc" type="button" class="text-button">Cc / Bcc</button></div><div id="cc-fields" hidden><label class="compose-row">Cc<input id="compose-cc" autocomplete="off"></label><label class="compose-row">Bcc<input id="compose-bcc" autocomplete="off"></label></div><label class="compose-row subject-row">Subject<input id="compose-subject" maxlength="300" placeholder="Give your message a subject"></label></div>
+      <textarea id="compose-body" placeholder="Write something good…" aria-label="Message body" dir="auto"></textarea>
+      <div id="compose-attachments" class="compose-attachments"></div>
+      <div id="compose-notice" class="notice" hidden></div>
+      <div class="compose-footer"><div class="compose-footer-left"><button class="button primary" id="send-button" type="submit"><span data-icon="send"></span> Send message</button><label class="icon-button attach-button" aria-label="Add attachments"><span data-icon="paperclip"></span><input id="attachment-input" type="file" multiple hidden></label><span id="draft-status" class="draft-status">Not saved</span></div><button id="save-draft" type="button" class="text-button">Save draft</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="account-dialog" class="small-dialog"><form id="account-form"><div class="dialog-header"><h2 id="account-dialog-title">Save an account</h2><button type="button" class="icon-button" data-close="account-dialog" data-icon="x" aria-label="Close account form"></button></div><label for="saved-email">Gmail address</label><input id="saved-email" type="email" maxlength="254" autocomplete="off" required placeholder="you@gmail.com"><label for="saved-label">Account label</label><input id="saved-label" maxlength="60" placeholder="Personal, business, or a name" required><label for="saved-password">Password or App Password <span class="optional">optional</span></label><input id="saved-password" type="password" maxlength="2048" autocomplete="new-password" placeholder="16-character Google App Password"><label class="checkbox-label" id="clear-password-label" hidden><input type="checkbox" id="clear-password"> Remove the saved password</label><p class="field-hint">For live Gmail IMAP inbox sync, use a 16-character <strong>Google App Password</strong> (from <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>).</p><div id="account-notice" class="notice" hidden></div><button type="submit" class="button primary wide">Save account</button></form></dialog>
+  <dialog id="change-lock-dialog" class="small-dialog"><form id="change-lock-form"><div class="dialog-header"><h2>Change passcode</h2><button type="button" class="icon-button" data-close="change-lock-dialog" data-icon="x" aria-label="Close passcode form"></button></div><label for="current-passcode">Current passcode</label><input id="current-passcode" type="password" autocomplete="current-password" required><label for="new-passcode">New passcode</label><input id="new-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required><label for="repeat-passcode">Confirm new passcode</label><input id="repeat-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required><div id="change-lock-notice" class="notice" hidden></div><p class="field-hint">Changing the passcode updates your RTDB master lock.</p><button type="submit" class="button primary wide">Update passcode</button></form></dialog>
+  <dialog id="password-dialog" class="small-dialog"><div class="dialog-header"><h2>Saved password</h2><button type="button" class="icon-button" data-close="password-dialog" data-icon="x" aria-label="Close saved password"></button></div><p id="password-email"></p><input id="revealed-password" type="password" readonly autocomplete="off" aria-label="Saved password"><div class="password-actions"><button id="show-saved-password" class="button secondary">Show</button><button id="copy-saved-password" class="button primary">Copy password</button></div><p class="field-hint">This reveal is recorded in your workspace activity.</p></dialog>
+  <dialog id="profile-dialog" class="small-dialog"><div class="dialog-header"><h2>Your dashboard</h2><button class="icon-button" data-close="profile-dialog" data-icon="x" aria-label="Close profile"></button></div><p id="profile-email"></p><button id="signout" class="button secondary wide">Lock dashboard</button></dialog>
+  <dialog id="confirm-dialog" class="small-dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-text"></p><div class="confirm-actions"><button id="confirm-cancel" class="button secondary">Cancel</button><button id="confirm-ok" class="button primary">Continue</button></div></dialog>
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+  <noscript><div class="noscript">Enable JavaScript to use your inbox dashboard.</div></noscript>
+</body>
+</html>
