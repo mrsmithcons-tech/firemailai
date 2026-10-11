@@ -2,18 +2,18 @@ name: Firemail AI Inbox Sync
 
 on:
   schedule:
-    # Runs every 5 minutes automatically
+    # Triggers every 5 minutes 24/7
     - cron: '*/5 * * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch: # Allows manual trigger anytime
 
 concurrency:
   group: firemail-sync
   cancel-in-progress: true
 
 jobs:
-  sync-inbox:
+  sync-inbox-continuous:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
 
     steps:
       - name: Checkout Code
@@ -28,5 +28,15 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Run IMAP Sync
-        run: node scripts/sync-inbox.mjs
+      - name: Run Continuous 30-Second Sync Loop
+        run: |
+          echo "🚀 Starting 30-second sync loop..."
+          END_TIME=$((SECONDS + 285))
+          while [ $SECONDS -lt $END_TIME ]; do
+            echo "========================================"
+            echo "📬 Syncing inboxes at $(date)..."
+            node scripts/sync-inbox.mjs || true
+            echo "⏳ Sleeping 30 seconds until next sync..."
+            sleep 30
+          done
+          echo "✅ 5-minute block completed. Next scheduled runner will continue seamlessly."
