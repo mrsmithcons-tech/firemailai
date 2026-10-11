@@ -1,0 +1,32 @@
+name: Firemail AI Inbox Sync
+
+on:
+  schedule:
+    # Runs every 5 minutes automatically
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+concurrency:
+  group: firemail-sync
+  cancel-in-progress: true
+
+jobs:
+  sync-inbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run IMAP Sync
+        run: node scripts/sync-inbox.mjs
