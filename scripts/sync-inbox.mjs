@@ -29,11 +29,11 @@ function cleanMsgId(rawId) {
 
 export async function syncAccount(account) {
   const email = account.email;
-  const rawPass = account.password || '';
+  const rawPass = account.appPassword || account.password || '';
   const password = rawPass.replace(/\s+/g, ''); // strip spaces from Google App Password (e.g. abcd efgh -> abcdefgh)
 
   if (!password) {
-    console.log(`[SKIP] Account ${email} has no saved password or App Password.`);
+    console.log(`[SKIP] Account ${email} has no saved App Password.`);
     return 0;
   }
 

@@ -49,7 +49,16 @@ export function generateSalt() {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Lock APIs
+// Plan Definitions
+export const PLANS = {
+  FREE: { id: 'free', name: 'Free Plan', maxAccounts: 5, price: '$0/mo', description: 'Save up to 5 emails / accounts' },
+  STARTER: { id: 'starter', name: 'Starter Plan', maxAccounts: 10, price: '$2/mo', description: 'Save up to 10 emails / accounts' },
+  PRO: { id: 'pro', name: 'Pro Plan', maxAccounts: 25, price: '$5/mo', description: 'Save up to 25 emails / accounts' },
+  BUSINESS: { id: 'business', name: 'Business Plan', maxAccounts: 50, price: '$10/mo', description: 'Save up to 50 emails / accounts' },
+  CUSTOM: { id: 'custom', name: 'Enterprise', maxAccounts: 9999, price: 'Custom', description: 'More than 50 emails - Contact mrsmithcons@gmail.com' }
+};
+
+// Lock & Multi-Workspace APIs
 export async function getLockStatus() {
   const lock = await request('mailroom/lock');
   if (!lock || !lock.hash || !lock.salt) {
@@ -73,20 +82,127 @@ export async function setupPasscode(passcode) {
   };
   await request('mailroom/lock', 'PUT', lockData);
   await logAudit('lock.created');
-  return { token: crypto.randomUUID(), expiresAt: Date.now() + 30 * 60000 };
+  return { token: crypto.randomUUID(), expiresAt: Date.now() + 30 * 60000, role: 'owner' };
+}
+
+// User Workspace Creation (Allow anyone to create passcode & workspace)
+export async function createWorkspace({ name, passcode, email = '', phone = '' }) {
+  if (!passcode || passcode.length < 4) {
+    throw new Error('Passcode must be at least 4 characters.');
+  }
+  const wsId = 'ws_' + Math.random().toString(36).slice(2, 10);
+  const salt = generateSalt();
+  const hash = await hashPasscode(passcode, salt);
+
+  const workspace = {
+    id: wsId,
+    name: name || 'My Mailroom',
+    salt,
+    hash,
+    plan: 'free',
+    email: email.trim().toLowerCase(),
+    phone: phone.trim(),
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  await request(`mailroom/workspaces/${wsId}`, 'PUT', workspace);
+
+  // Initialize default profile
+  await saveProfile(wsId, {
+    name: name || 'Workspace User',
+    email: email.trim().toLowerCase(),
+    phone: phone.trim(),
+    plan: 'free',
+    createdAt: Date.now()
+  });
+
+  // Log in admin recovery directory
+  if (email) {
+    await request(`mailroom/admin/recovery/${encodeURIComponent(email.replace(/[.$#[\]]/g, '_'))}`, 'PUT', {
+      workspaceId: wsId,
+      email,
+      name,
+      createdAt: Date.now()
+    });
+  }
+
+  await logAudit('workspace.created', wsId);
+  return {
+    token: crypto.randomUUID(),
+    workspaceId: wsId,
+    name: workspace.name,
+    plan: 'free',
+    expiresAt: Date.now() + 30 * 60000,
+    role: 'owner'
+  };
 }
 
 export async function verifyPasscode(passcode) {
+  // 1. Check Master / Owner Lock
   const status = await getLockStatus();
-  if (!status.configured) {
-    throw new Error('Lock is not configured yet.');
+  if (status.configured) {
+    const computedHash = await hashPasscode(passcode, status.salt);
+    if (computedHash === status.hash) {
+      await logAudit('dashboard.unlocked');
+      const profile = await getProfile('master');
+      return {
+        token: crypto.randomUUID(),
+        workspaceId: 'master',
+        role: 'owner',
+        plan: profile.plan || 'free',
+        expiresAt: Date.now() + 30 * 60000
+      };
+    }
   }
-  const computedHash = await hashPasscode(passcode, status.salt);
-  if (computedHash !== status.hash) {
-    throw new Error('Incorrect dashboard passcode. Please try again.');
+
+  // 2. Check User Workspaces (Multi-tenant)
+  const workspacesData = await request('mailroom/workspaces');
+  if (workspacesData) {
+    for (const ws of Object.values(workspacesData)) {
+      if (ws.salt && ws.hash) {
+        const h = await hashPasscode(passcode, ws.salt);
+        if (h === ws.hash) {
+          await logAudit('workspace.unlocked', ws.id);
+          const profile = await getProfile(ws.id);
+          return {
+            token: crypto.randomUUID(),
+            workspaceId: ws.id,
+            role: 'owner',
+            name: ws.name,
+            plan: ws.plan || profile.plan || 'free',
+            expiresAt: Date.now() + 30 * 60000
+          };
+        }
+      }
+    }
   }
-  await logAudit('dashboard.unlocked');
-  return { token: crypto.randomUUID(), expiresAt: Date.now() + 30 * 60000 };
+
+  // 3. Check Shared Inboxes (Guest Passcode Access)
+  const sharesData = await request('mailroom/shares');
+  if (sharesData) {
+    for (const share of Object.values(sharesData)) {
+      if (share.salt && share.hash) {
+        const sh = await hashPasscode(passcode, share.salt);
+        if (sh === share.hash) {
+          await logAudit('share.accessed', share.id);
+          return {
+            token: crypto.randomUUID(),
+            isShared: true,
+            role: 'guest',
+            shareId: share.id,
+            accountId: share.accountId,
+            accountEmail: share.accountEmail,
+            label: share.label || 'Shared Inbox',
+            permissions: share.permissions || { canRead: true, canCompose: true },
+            expiresAt: Date.now() + 60 * 60000
+          };
+        }
+      }
+    }
+  }
+
+  throw new Error('Incorrect passcode. Please check your passcode or contact admin at mrsmithcons@gmail.com.');
 }
 
 export async function changePasscode(currentPasscode, newPasscode) {
@@ -107,7 +223,81 @@ export async function changePasscode(currentPasscode, newPasscode) {
   return { token: crypto.randomUUID(), expiresAt: Date.now() + 30 * 60000 };
 }
 
-// Accounts APIs
+// User Profile APIs
+export async function getProfile(workspaceId = 'master') {
+  const profile = await request(`mailroom/profiles/${workspaceId}`);
+  return profile || {
+    name: 'Chen Yu Ting',
+    email: 'mrsmithcons@gmail.com',
+    phone: '',
+    bio: 'Firemail AI Administrator',
+    company: 'MrSmith Consulting',
+    plan: 'free',
+    createdAt: Date.now()
+  };
+}
+
+export async function saveProfile(workspaceId = 'master', data = {}) {
+  const existing = await getProfile(workspaceId);
+  const payload = {
+    ...existing,
+    ...data,
+    updatedAt: Date.now()
+  };
+  await request(`mailroom/profiles/${workspaceId}`, 'PUT', payload);
+  await logAudit('profile.updated', workspaceId);
+  return payload;
+}
+
+// Shared Inboxes Management (Share specific inboxes via Passcode)
+export async function getSharedInboxes() {
+  const data = await request('mailroom/shares');
+  if (!data) return [];
+  return Object.values(data).map(s => ({
+    id: s.id,
+    accountId: s.accountId,
+    accountEmail: s.accountEmail,
+    label: s.label || 'Shared View',
+    createdAt: s.createdAt,
+    permissions: s.permissions || { canRead: true, canCompose: true }
+  }));
+}
+
+export async function createSharedInbox({ accountId, label, passcode, permissions = { canRead: true, canCompose: true } }) {
+  if (!passcode || passcode.length < 4) {
+    throw new Error('Share passcode must be at least 4 characters.');
+  }
+  const accounts = await getAccounts();
+  const acc = accounts.find(a => a.id === accountId);
+  if (!acc) throw new Error('Account not found to share.');
+
+  const shareId = 'share_' + Math.random().toString(36).slice(2, 10);
+  const salt = generateSalt();
+  const hash = await hashPasscode(passcode, salt);
+
+  const payload = {
+    id: shareId,
+    accountId: acc.id,
+    accountEmail: acc.email,
+    label: (label || `Share: ${acc.label}`).trim(),
+    salt,
+    hash,
+    permissions,
+    createdAt: Date.now()
+  };
+
+  await request(`mailroom/shares/${shareId}`, 'PUT', payload);
+  await logAudit('share.created', shareId);
+  return payload;
+}
+
+export async function removeSharedInbox(shareId) {
+  await request(`mailroom/shares/${shareId}`, 'DELETE');
+  await logAudit('share.removed', shareId);
+  return { success: true };
+}
+
+// Accounts APIs (Supporting both Gmail Password & App Password separately)
 export async function getAccounts() {
   const data = await request('mailroom/accounts');
   if (!data) return [];
@@ -116,39 +306,65 @@ export async function getAccounts() {
     email: acc.email,
     label: acc.label || acc.email.split('@')[0],
     connected: true,
-    hasPassword: Boolean(acc.password),
+    hasAppPassword: Boolean(acc.appPassword || acc.password),
+    hasGmailPassword: Boolean(acc.gmailPassword),
+    appPassword: acc.appPassword || acc.password || '',
+    gmailPassword: acc.gmailPassword || '',
     status: 'connected',
     createdAt: acc.createdAt || Date.now()
   }));
 }
 
-export async function getAccountPassword(accountId) {
+export async function getAccountPasswords(accountId) {
   const acc = await request(`mailroom/accounts/${accountId}`);
   if (!acc) throw new Error('Account not found');
   await logAudit('password.revealed', accountId);
-  return acc.password || '';
+  return {
+    appPassword: acc.appPassword || acc.password || '',
+    gmailPassword: acc.gmailPassword || ''
+  };
 }
 
-export async function saveAccount({ id, email, label, password, clearPassword }) {
+export async function saveAccount({ id, email, label, appPassword, gmailPassword, clearAppPassword, clearGmailPassword, currentPlan = 'free' }) {
   if (!email || !email.includes('@')) throw new Error('Please enter a valid Gmail address.');
+
+  const accounts = await getAccounts();
+  const maxAllowed = PLANS[currentPlan.toUpperCase()]?.maxAccounts || 5;
+
+  // Enforce Plan Limits for new accounts
+  if (!id && accounts.length >= maxAllowed) {
+    throw new Error(`Plan limit reached! Your ${PLANS[currentPlan.toUpperCase()]?.name || 'Free Plan'} allows up to ${maxAllowed} accounts. Please upgrade your plan or contact admin at mrsmithcons@gmail.com.`);
+  }
+
   const accountId = id || 'acc_' + Math.random().toString(36).slice(2, 10);
   let existing = null;
   if (id) {
     existing = await request(`mailroom/accounts/${id}`);
   }
-  
-  let savedPassword = password;
-  if (clearPassword) {
-    savedPassword = '';
-  } else if (!savedPassword && existing) {
-    savedPassword = existing.password || '';
+
+  // App Password handling
+  let savedAppPassword = appPassword;
+  if (clearAppPassword) {
+    savedAppPassword = '';
+  } else if (!savedAppPassword && existing) {
+    savedAppPassword = existing.appPassword || existing.password || '';
+  }
+
+  // Gmail Password handling
+  let savedGmailPassword = gmailPassword;
+  if (clearGmailPassword) {
+    savedGmailPassword = '';
+  } else if (!savedGmailPassword && existing) {
+    savedGmailPassword = existing.gmailPassword || '';
   }
 
   const payload = {
     id: accountId,
     email: email.trim().toLowerCase(),
     label: (label || email.split('@')[0]).trim(),
-    password: savedPassword || '',
+    appPassword: savedAppPassword || '',
+    gmailPassword: savedGmailPassword || '',
+    password: savedAppPassword || '', // Backwards compatibility for IMAP sync script
     connected: true,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now()

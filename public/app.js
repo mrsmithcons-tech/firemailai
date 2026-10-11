@@ -7,8 +7,14 @@ import {
   setupPasscode,
   verifyPasscode,
   changePasscode,
+  createWorkspace,
+  getProfile,
+  saveProfile,
+  getSharedInboxes,
+  createSharedInbox,
+  removeSharedInbox,
   getAccounts,
-  getAccountPassword,
+  getAccountPasswords,
   saveAccount,
   removeAccount,
   getMessages,
@@ -18,7 +24,8 @@ import {
   sendEmailMessage,
   getAudit,
   logAudit,
-  triggerSyncRequest
+  triggerSyncRequest,
+  PLANS
 } from './rtdb.js';
 
 const $ = id => document.getElementById(id);
@@ -26,7 +33,36 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 const demo = new URLSearchParams(location.search).get('demo') === '1';
 const palette = ['#e8c9b2', '#c4dcae', '#d6ccdf', '#b8d3dd', '#e7dda6', '#cfddce'];
 const folders = { INBOX: ['Inbox', 'All your conversations, in one place.'], STARRED: ['Starred', 'The conversations you want to keep close.'], SENT: ['Sent', 'A little record of what you have shared.'], DRAFT: ['Drafts', 'Good ideas, ready when you are.'], ALL: ['All mail', 'Your mail, across every folder except Spam and Trash.'], SPAM: ['Spam', 'Messages Gmail has kept out of your inbox.'], TRASH: ['Trash', 'Deleted mail stays here until Gmail removes it.'] };
-const state = { user: null, identity: null, configured: true, vaultToken: '', expiresAt: 0, epoch: 0, controller: new AbortController(), accounts: [], messages: [], folder: 'INBOX', account: 'all', search: '', filter: 'all', cursor: null, listVersion: 0, readerVersion: 0, reader: null, activeId: null, compose: null, lastActivity: Date.now(), loading: false, oauthPending: false, settings: false };
+const state = {
+  user: null,
+  identity: null,
+  configured: true,
+  vaultToken: '',
+  expiresAt: 0,
+  epoch: 0,
+  controller: new AbortController(),
+  accounts: [],
+  messages: [],
+  folder: 'INBOX',
+  account: 'all',
+  search: '',
+  filter: 'all',
+  cursor: null,
+  listVersion: 0,
+  readerVersion: 0,
+  reader: null,
+  activeId: null,
+  compose: null,
+  lastActivity: Date.now(),
+  loading: false,
+  oauthPending: false,
+  settings: false,
+  isGuest: false,
+  shareInfo: null,
+  workspaceId: 'master',
+  currentPlan: 'free',
+  shares: []
+};
 let revealTimer;
 
 function notice(id, message = '', success = false) { $(id).hidden = !message; $(id).textContent = message; $(id).classList.toggle('success', success); }
@@ -63,27 +99,48 @@ async function api(path, { method = 'GET', body } = {}) {
     return { success: true };
   }
 
+  if (path === '/api/workspaces/create') {
+    return createWorkspace(body);
+  }
+
+  if (path === '/api/profile' && method === 'GET') {
+    return getProfile(state.workspaceId);
+  }
+  if (path === '/api/profile' && method === 'POST') {
+    return saveProfile(state.workspaceId, body);
+  }
+
+  if (path === '/api/shares' && method === 'GET') {
+    return getSharedInboxes();
+  }
+  if (path === '/api/shares' && method === 'POST') {
+    return createSharedInbox(body);
+  }
+  const shareMatch = path.match(/^\/api\/shares\/([^/]+)$/);
+  if (shareMatch && method === 'DELETE') {
+    return removeSharedInbox(shareMatch[1]);
+  }
+
   if (path === '/api/accounts' && method === 'GET') {
     const accounts = await getAccounts();
     return { accounts };
   }
   if (path === '/api/accounts' && method === 'PUT') {
-    return saveAccount(body);
+    return saveAccount({ ...body, currentPlan: state.currentPlan });
   }
   const accountMatch = path.match(/^\/api\/accounts\/([^/]+)$/);
   if (accountMatch && method === 'DELETE') {
     return removeAccount(accountMatch[1]);
   }
-  const passwordMatch = path.match(/^\/api\/accounts\/([^/]+)\/password$/);
+  const passwordMatch = path.match(/^\/api\/accounts\/([^/]+)\/passwords$/);
   if (passwordMatch) {
-    const password = await getAccountPassword(passwordMatch[1]);
-    return { password };
+    return getAccountPasswords(passwordMatch[1]);
   }
 
   if (path.startsWith('/api/messages')) {
     const url = new URL('http://local' + path);
     const folder = url.searchParams.get('folder') || 'INBOX';
-    const account = url.searchParams.get('account') || 'all';
+    const account = state.isGuest ? state.shareInfo.accountId : (url.searchParams.get('account') || 'all');
     const q = url.searchParams.get('q') || '';
     return getMessages({ folder, account, q });
   }
@@ -119,14 +176,17 @@ function showGate(message = '') {
   $('workspace').hidden = true;
   $('gate').hidden = false;
   $('unlock-form').hidden = false;
+  $('create-ws-form').hidden = true;
+  $('tab-unlock').classList.add('active');
+  $('tab-create').classList.remove('active');
   $('confirm-field').hidden = state.configured;
   $('confirm-passcode').required = !state.configured;
   $('passcode').autocomplete = state.configured ? 'current-password' : 'new-password';
-  $('gate-title').textContent = state.configured ? 'Dashboard Locked' : 'Set Master Passcode';
+  $('gate-title').textContent = state.configured ? 'Firemail AI Access' : 'Set Master Passcode';
   $('gate-description').textContent = state.configured
-    ? 'Enter your master passcode to unlock Firemail AI and access all stored accounts.'
+    ? 'Unlock your workspace, enter a shared inbox, or create a new passcode.'
     : 'Create a master passcode (at least 4 characters). Stored in Firebase Realtime Database.';
-  $('unlock-button').innerHTML = (state.configured ? 'Unlock dashboard ' : 'Set passcode & enter ') + icon('arrow-right');
+  $('unlock-button').innerHTML = (state.configured ? 'Unlock Workspace ' : 'Set passcode & enter ') + icon('arrow-right');
   notice('gate-notice', message);
 }
 function clearPrivateUI() {
@@ -150,14 +210,105 @@ function lockDashboard(message = '', invalidate = true) {
   if (invalidate && oldToken && oldUser && !demo) oldUser.getIdToken().then(token => fetch('/api/lock', { method: 'POST', cache: 'no-store', keepalive: true, headers: { Authorization: `Bearer ${token}`, 'X-Vault-Session': oldToken, 'Content-Type': 'application/json' }, body: '{}' })).catch(() => {});
 }
 async function enterWorkspace(session) {
-  state.vaultToken = session.token; state.expiresAt = session.expiresAt; state.lastActivity = Date.now(); state.configured = true;
-  $('passcode').value = ''; $('confirm-passcode').value = '';
-  $('gate').hidden = true; $('workspace').hidden = false; $('demo-badge').hidden = !demo;
-  $('profile-button').textContent = initials(state.user?.displayName || state.user?.email || 'Your Workspace');
-  $('settings-area').hidden = true; $('mail-area').hidden = false; state.settings = false;
-  try { await loadAccounts(); await loadMessages(); } catch (err) { report(err); }
+  state.vaultToken = session.token;
+  state.expiresAt = session.expiresAt;
+  state.lastActivity = Date.now();
+  state.configured = true;
+  $('passcode').value = '';
+  $('confirm-passcode').value = '';
+  $('gate').hidden = true;
+  $('workspace').hidden = false;
+  $('demo-badge').hidden = !demo;
+  $('settings-area').hidden = true;
+  $('mail-area').hidden = false;
+  state.settings = false;
+
+  if (session.isShared || session.role === 'guest') {
+    state.isGuest = true;
+    state.shareInfo = session;
+    state.account = session.accountId;
+    state.folder = 'INBOX';
+    $('guest-banner').hidden = false;
+    if ($('plan-widget')) $('plan-widget').hidden = true;
+    if ($('topbar-plans-btn')) $('topbar-plans-btn').hidden = true;
+    if ($('settings-button')) $('settings-button').hidden = true;
+    if ($('share-inbox-btn')) $('share-inbox-btn').hidden = true;
+    if ($('share-inbox-header-btn')) $('share-inbox-header-btn').hidden = true;
+    if ($('connect-main')) $('connect-main').hidden = true;
+    if ($('accounts-heading')) $('accounts-heading').hidden = true;
+    if ($('account-nav')) $('account-nav').hidden = true;
+    if ($('profile-button')) $('profile-button').hidden = true;
+    // Restrict folder navigation for guest: only INBOX is accessible
+    document.querySelectorAll('.folder-nav .nav-item').forEach(el => {
+      if (el.dataset.folder && el.dataset.folder !== 'INBOX') el.hidden = true;
+    });
+    $('breadcrumb').textContent = session.label || session.accountEmail || 'Shared Inbox';
+    state.accounts = [{
+      id: session.accountId,
+      email: session.accountEmail,
+      label: session.label || 'Shared Inbox',
+      connected: true
+    }];
+    renderAccounts();
+  } else {
+    state.isGuest = false;
+    state.shareInfo = null;
+    state.workspaceId = session.workspaceId || 'master';
+    state.currentPlan = session.plan || 'free';
+    $('guest-banner').hidden = true;
+    if ($('plan-widget')) $('plan-widget').hidden = false;
+    if ($('topbar-plans-btn')) $('topbar-plans-btn').hidden = false;
+    if ($('settings-button')) $('settings-button').hidden = false;
+    if ($('share-inbox-btn')) $('share-inbox-btn').hidden = false;
+    if ($('share-inbox-header-btn')) $('share-inbox-header-btn').hidden = false;
+    if ($('connect-main')) $('connect-main').hidden = false;
+    if ($('accounts-heading')) $('accounts-heading').hidden = false;
+    if ($('account-nav')) $('account-nav').hidden = false;
+    if ($('profile-button')) $('profile-button').hidden = false;
+    document.querySelectorAll('.folder-nav .nav-item').forEach(el => { el.hidden = false; });
+
+    try {
+      const prof = await api('/api/profile');
+      if (prof) {
+        state.user = { displayName: prof.name, email: prof.email };
+        state.currentPlan = prof.plan || session.plan || 'free';
+        $('profile-button').textContent = initials(prof.name || prof.email || 'Owner');
+      }
+    } catch {}
+    updatePlanUI();
+    try { await loadAccounts(); } catch (err) { report(err); }
+  }
+
+  try { await loadMessages(); } catch (err) { report(err); }
 }
-async function loadAccounts() { const result = await api('/api/accounts'); if (!canUseWorkspace()) return; state.accounts = result.accounts; if (state.account !== 'all' && !state.accounts.some(a => a.id === state.account)) state.account = 'all'; renderAccounts(); }
+
+function updatePlanUI() {
+  if (state.isGuest) return;
+  const planKey = (state.currentPlan || 'free').toUpperCase();
+  const planObj = PLANS[planKey] || PLANS.FREE;
+  const max = planObj.maxAccounts;
+  const count = state.accounts.length;
+  if ($('plan-name')) $('plan-name').textContent = planObj.name;
+  if ($('plan-usage')) $('plan-usage').textContent = `${count} / ${max} accounts`;
+  if ($('topbar-plan-label')) $('topbar-plan-label').textContent = planObj.name;
+  if ($('profile-plan-name')) $('profile-plan-name').textContent = `${planObj.name} (${max} accounts)`;
+  
+  document.querySelectorAll('#plans-dialog .plan-card').forEach(card => {
+    const p = card.dataset.plan;
+    card.classList.toggle('active-plan', p === state.currentPlan);
+  });
+}
+
+async function loadAccounts() {
+  if (state.isGuest) return;
+  const result = await api('/api/accounts');
+  if (!canUseWorkspace()) return;
+  state.accounts = result.accounts;
+  if (state.account !== 'all' && !state.accounts.some(a => a.id === state.account)) state.account = 'all';
+  renderAccounts();
+  updatePlanUI();
+}
+
 function renderAccounts() {
   const connected = connectedAccounts();
   $('account-nav').innerHTML = `<button class="account-item ${state.account === 'all' ? 'active' : ''}" data-account="all"><span class="account-color" style="background:#c6e4ad"></span><span class="account-copy"><strong>All accounts</strong><small>${connected.length} connected inbox${connected.length === 1 ? '' : 'es'}</small></span></button>` + (state.accounts.length ? state.accounts.map(a => `<button class="account-item ${state.account === a.id ? 'active' : ''}" data-account="${esc(a.id)}"><span class="account-color" style="background:${color(a.email)}"></span><span class="account-copy"><strong>${esc(a.label || a.email.split('@')[0])}</strong><small>${esc(a.connected ? a.email : 'Saved · connect to read mail')}</small></span></button>`).join('') : '<p class="sidebar-empty">A fresh start.<br>Connect your first Gmail inbox.</p>');
@@ -264,14 +415,160 @@ async function beginConnect(aid) {
   if (!canUseWorkspace()) return;
   openAccount(aid || null);
 }
-async function showSettings() { state.settings = true; closeReader(); $('mail-area').hidden = true; $('settings-area').hidden = false; $('sidebar').classList.remove('open'); renderSettingsAccounts(); $('audit-list').textContent = 'Loading activity…'; try { const data = await api('/api/audit'); if (!state.settings || !canUseWorkspace()) return; const descriptions = { 'lock.created': 'Master passcode created', 'lock.changed': 'Master passcode changed', 'dashboard.unlocked': 'Dashboard unlocked', 'account.saved': 'Account details & password saved in RTDB', 'account.removed': 'Account removed', 'password.revealed': 'Saved password revealed', 'mail.sent': 'Message sent' }; $('audit-list').innerHTML = data.events.length ? data.events.slice(0, 20).map(e => `<div class="audit-row"><span>${esc(descriptions[e.action] || e.action)}${e.accountId ? ' · ' + esc(accountLabel(e.accountId)) : ''}</span><span>${esc(stamp(e.at, true))}</span></div>`).join('') : '<p class="audit-empty">Your workspace activity will appear here.</p>'; } catch (err) { report(err); } }
-function renderSettingsAccounts() {
-  $('settings-accounts').innerHTML = state.accounts.length ? state.accounts.map(a => `<div class="saved-account"><div class="sender-avatar" style="background:${color(a.email)}">${esc(initials(a.label || a.email))}</div><div class="saved-account-main"><strong>${esc(a.label || a.email.split('@')[0])}<span class="account-status connected">SAVED IN RTDB</span></strong><small>${esc(a.email)}</small></div><div class="saved-account-actions">${a.hasPassword ? `<button class="icon-button" data-reveal="${esc(a.id)}" aria-label="Reveal password for ${esc(a.email)}">${icon('eye')}</button>` : ''}<button class="icon-button" data-edit-account="${esc(a.id)}" aria-label="Edit ${esc(a.email)}">${icon('edit')}</button><button class="icon-button" data-remove-account="${esc(a.id)}" aria-label="Remove ${esc(a.email)}">${icon('trash')}</button></div></div>`).join('') : '<div class="empty-state"><div class="empty-icon">' + icon('mail') + '</div><h3>Your first Gmail account</h3><p>Save your Gmail address and password into Firebase RTDB.</p><button class="button primary" data-connect-first>Add Gmail account</button></div>';
+async function showSettings() {
+  if (state.isGuest) return;
+  state.settings = true;
+  closeReader();
+  $('mail-area').hidden = true;
+  $('settings-area').hidden = false;
+  $('sidebar').classList.remove('open');
+  renderSettingsAccounts();
+  renderSettingsShares();
+  $('audit-list').textContent = 'Loading activity…';
+  try {
+    const data = await api('/api/audit');
+    if (!state.settings || !canUseWorkspace()) return;
+    const descriptions = {
+      'lock.created': 'Master passcode created',
+      'lock.changed': 'Master passcode changed',
+      'dashboard.unlocked': 'Dashboard unlocked',
+      'account.saved': 'Account details & passwords saved in RTDB',
+      'account.removed': 'Account removed',
+      'password.revealed': 'Saved password revealed',
+      'mail.sent': 'Message sent',
+      'share.created': 'Shared inbox passcode created',
+      'share.removed': 'Shared inbox access revoked',
+      'profile.updated': 'User profile updated in RTDB',
+      'workspace.created': 'User workspace created with passcode'
+    };
+    $('audit-list').innerHTML = data.events.length
+      ? data.events.slice(0, 20).map(e => `<div class="audit-row"><span>${esc(descriptions[e.action] || e.action)}${e.accountId ? ' · ' + esc(accountLabel(e.accountId)) : ''}</span><span>${esc(stamp(e.at, true))}</span></div>`).join('')
+      : '<p class="audit-empty">Your workspace activity will appear here.</p>';
+  } catch (err) { report(err); }
 }
-function openAccount(aid = null) { const account = state.accounts.find(a => a.id === aid); $('account-form').reset(); $('saved-email').disabled = Boolean(account); $('saved-email').value = account?.email || ''; $('saved-label').value = account?.label || ''; $('saved-password').placeholder = account?.hasPassword ? 'Leave blank to keep the saved password' : 'Encrypted before it is saved'; $('clear-password-label').hidden = !account?.hasPassword; $('account-dialog-title').textContent = account ? 'Edit account details' : 'Save an account'; notice('account-notice'); $('account-dialog').showModal(); }
-async function askConfirm(title, message, button = 'Continue') { $('confirm-title').textContent = title; $('confirm-text').textContent = message; $('confirm-ok').textContent = button; const dialog = $('confirm-dialog'); dialog.showModal(); return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true })); }
-function clearRevealedPassword() { clearTimeout(revealTimer); $('revealed-password').value = ''; $('revealed-password').type = 'password'; $('password-email').textContent = ''; $('show-saved-password').textContent = 'Show'; }
-async function revealPassword(aid) { try { const data = await api(`/api/accounts/${aid}/password`, { method: 'POST', body: {} }); if (!canUseWorkspace()) return; clearRevealedPassword(); $('password-email').textContent = state.accounts.find(a => a.id === aid)?.email || ''; $('revealed-password').value = data.password; $('password-dialog').showModal(); revealTimer = setTimeout(() => { $('password-dialog').close(); clearRevealedPassword(); }, 30000); } catch (err) { report(err); } }
+
+function renderSettingsAccounts() {
+  $('settings-accounts').innerHTML = state.accounts.length
+    ? state.accounts.map(a => `
+        <div class="saved-account">
+          <div class="sender-avatar" style="background:${color(a.email)}">${esc(initials(a.label || a.email))}</div>
+          <div class="saved-account-main">
+            <strong>${esc(a.label || a.email.split('@')[0])} <span class="account-status connected">SAVED IN RTDB</span></strong>
+            <small>${esc(a.email)}${a.hasAppPassword ? ' · App Password saved' : ''}${a.hasGmailPassword ? ' · Gmail Password saved' : ''}</small>
+          </div>
+          <div class="saved-account-actions">
+            ${(a.hasAppPassword || a.hasGmailPassword) ? `<button class="icon-button" data-reveal="${esc(a.id)}" aria-label="Reveal passwords for ${esc(a.email)}">${icon('eye')}</button>` : ''}
+            <button class="icon-button" data-edit-account="${esc(a.id)}" aria-label="Edit ${esc(a.email)}">${icon('edit')}</button>
+            <button class="icon-button" data-remove-account="${esc(a.id)}" aria-label="Remove ${esc(a.email)}">${icon('trash')}</button>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="empty-state"><div class="empty-icon">' + icon('mail') + '</div><h3>Your first Gmail account</h3><p>Save your Gmail address and passwords into Firebase RTDB.</p><button class="button primary" data-connect-first>Add Gmail account</button></div>';
+}
+
+async function renderSettingsShares() {
+  const container = $('settings-shares');
+  if (!container) return;
+  container.innerHTML = '<p class="field-hint">Loading shared inboxes…</p>';
+  try {
+    const shares = await api('/api/shares');
+    state.shares = shares || [];
+    if (!state.shares.length) {
+      container.innerHTML = '<p class="sidebar-empty">No inboxes are shared yet.<br>Click "Share inbox" to give restricted access to anyone via passcode.</p>';
+      return;
+    }
+    container.innerHTML = state.shares.map(s => `
+      <div class="saved-account">
+        <div class="sender-avatar" style="background:#b8d3dd">${icon('share')}</div>
+        <div class="saved-account-main">
+          <strong>${esc(s.label)} <span class="account-status connected">PASSCODE ACTIVE</span></strong>
+          <small>Account: ${esc(s.accountEmail)} · Created ${esc(stamp(s.createdAt))}</small>
+        </div>
+        <div class="saved-account-actions">
+          <button class="icon-button" data-remove-share="${esc(s.id)}" aria-label="Revoke share access">${icon('trash')}</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = `<p class="field-hint error">${esc(err.message)}</p>`;
+  }
+}
+
+function openAccount(aid = null) {
+  if (state.isGuest) return;
+  const account = state.accounts.find(a => a.id === aid);
+
+  if (!account) {
+    const planKey = (state.currentPlan || 'free').toUpperCase();
+    const max = PLANS[planKey]?.maxAccounts || 5;
+    if (state.accounts.length >= max) {
+      toast(`You have reached the ${PLANS[planKey]?.name || 'Free Plan'} limit (${max} accounts). Please upgrade your plan.`, true);
+      $('plans-dialog').showModal();
+      return;
+    }
+  }
+
+  $('account-form').reset();
+  $('account-form').dataset.accountId = aid || '';
+  $('saved-email').disabled = Boolean(account);
+  $('saved-email').value = account?.email || '';
+  $('saved-label').value = account?.label || '';
+  
+  $('saved-gmail-password').value = '';
+  $('saved-gmail-password').type = 'password';
+  $('saved-gmail-password').placeholder = account?.hasGmailPassword ? 'Saved in RTDB · Leave blank to keep unchanged' : 'Normal Gmail login password';
+  $('clear-gmail-pwd-label').hidden = !account?.hasGmailPassword;
+  $('clear-gmail-pwd').checked = false;
+
+  $('saved-app-password').value = '';
+  $('saved-app-password').type = 'password';
+  $('saved-app-password').placeholder = account?.hasAppPassword ? 'Saved in RTDB · Leave blank to keep unchanged' : '16-character code (e.g. abcd efgh ijkl mnop)';
+  $('clear-app-pwd-label').hidden = !account?.hasAppPassword;
+  $('clear-app-pwd').checked = false;
+
+  $('account-dialog-title').textContent = account ? 'Edit account details' : 'Save an account';
+  notice('account-notice');
+  $('account-dialog').showModal();
+}
+
+async function askConfirm(title, message, button = 'Continue') {
+  $('confirm-title').textContent = title;
+  $('confirm-text').textContent = message;
+  $('confirm-ok').textContent = button;
+  const dialog = $('confirm-dialog');
+  dialog.showModal();
+  return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
+}
+
+function clearRevealedPasswords() {
+  clearTimeout(revealTimer);
+  $('revealed-app-password').value = '';
+  $('revealed-app-password').type = 'password';
+  $('revealed-gmail-password').value = '';
+  $('revealed-gmail-password').type = 'password';
+  $('password-email').textContent = '';
+}
+
+async function revealPassword(aid) {
+  try {
+    const data = await api(`/api/accounts/${aid}/passwords`);
+    if (!canUseWorkspace()) return;
+    clearRevealedPasswords();
+    const acc = state.accounts.find(a => a.id === aid);
+    $('password-email').textContent = `${acc?.label || ''} (${acc?.email || ''})`;
+    $('revealed-app-password').value = data.appPassword || '(No App Password saved)';
+    $('revealed-app-password').type = 'password';
+    $('revealed-gmail-password').value = data.gmailPassword || '(No Gmail Password saved)';
+    $('revealed-gmail-password').type = 'password';
+    $('password-dialog').showModal();
+    revealTimer = setTimeout(() => {
+      $('password-dialog').close();
+      clearRevealedPasswords();
+    }, 30000);
+  } catch (err) {
+    report(err);
+  }
+}
 
 function composerPayload() {
   const context = state.compose;
@@ -294,10 +591,12 @@ function resetComposer() { if (state.compose) clearTimeout(state.compose.saveTim
 function openCompose({ mode = 'new', message = null, draftId = null } = {}) {
   const accounts = connectedAccounts(); if (!accounts.length) { toast('Connect a Gmail inbox before composing a message.', true); return null; }
   resetComposer();
-  const aid = message?.accountId || (state.account !== 'all' && accounts.some(a => a.id === state.account) ? state.account : accounts[0].id);
+  const aid = state.isGuest
+    ? state.shareInfo.accountId
+    : (message?.accountId || (state.account !== 'all' && accounts.some(a => a.id === state.account) ? state.account : accounts[0].id));
   const context = state.compose = { accountId: aid, draftId, mode, attachments: [], revision: 0, savedRevision: 0, sendKey: crypto.randomUUID(), busy: false };
   $('compose-from').innerHTML = accounts.map(a => `<option value="${esc(a.id)}">${esc(a.label || a.email)} — ${esc(a.email)}</option>`).join(''); $('compose-from').value = aid;
-  $('compose-from').disabled = Boolean(draftId) || ['reply', 'reply-all'].includes(mode);
+  $('compose-from').disabled = state.isGuest || Boolean(draftId) || ['reply', 'reply-all'].includes(mode);
   $('cc-fields').hidden = true; $('draft-status').textContent = draftId ? 'Saved in Gmail' : 'Not saved';
   $('compose-title').textContent = ({ new: 'New message', reply: 'Reply', 'reply-all': 'Reply to everyone', forward: 'Forward message', draft: 'Edit draft' })[mode];
   if (message) {
@@ -372,6 +671,33 @@ async function addFiles(files) {
 }
 
 hydrateIcons();
+
+// Gate Unlock & Workspace Creation Tabs
+$('tab-unlock').addEventListener('click', () => {
+  $('tab-unlock').classList.add('active');
+  $('tab-create').classList.remove('active');
+  $('unlock-form').hidden = false;
+  $('create-ws-form').hidden = true;
+  notice('gate-notice');
+});
+
+$('tab-create').addEventListener('click', () => {
+  $('tab-create').classList.add('active');
+  $('tab-unlock').classList.remove('active');
+  $('create-ws-form').hidden = false;
+  $('unlock-form').hidden = true;
+  notice('gate-notice');
+});
+
+$('toggle-passcode').addEventListener('click', () => {
+  $('passcode').type = $('passcode').type === 'password' ? 'text' : 'password';
+  $('toggle-passcode').setAttribute('aria-label', $('passcode').type === 'password' ? 'Show passcode' : 'Hide passcode');
+});
+
+$('toggle-ws-passcode').addEventListener('click', () => {
+  $('ws-passcode').type = $('ws-passcode').type === 'password' ? 'text' : 'password';
+});
+
 $('unlock-form').addEventListener('submit', async event => {
   event.preventDefault();
   notice('gate-notice');
@@ -392,26 +718,224 @@ $('unlock-form').addEventListener('submit', async event => {
     $('unlock-button').disabled = false;
   }
 });
-$('toggle-passcode').addEventListener('click', () => {
-  $('passcode').type = $('passcode').type === 'password' ? 'text' : 'password';
-  $('toggle-passcode').setAttribute('aria-label', $('passcode').type === 'password' ? 'Show passcode' : 'Hide passcode');
+
+$('create-ws-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  notice('gate-notice');
+  const name = $('ws-name').value.trim();
+  const email = $('ws-email').value.trim();
+  const pwd = $('ws-passcode').value;
+  const confirm = $('ws-confirm').value;
+
+  if (pwd !== confirm) {
+    notice('gate-notice', 'The passcodes do not match.');
+    return;
+  }
+  if (pwd.length < 4) {
+    notice('gate-notice', 'Passcode must be at least 4 characters.');
+    return;
+  }
+
+  $('create-ws-button').disabled = true;
+  try {
+    const session = await api('/api/workspaces/create', {
+      method: 'POST',
+      body: { name, email, passcode: pwd }
+    });
+    toast('Workspace created successfully! Remember to keep your passcode safe.');
+    await enterWorkspace(session);
+  } catch (err) {
+    notice('gate-notice', err.message);
+  } finally {
+    $('create-ws-button').disabled = false;
+  }
 });
-function signOut() {
-  lockDashboard('Dashboard locked.');
+
+// Guest Mode Exit
+$('guest-exit').addEventListener('click', () => {
+  lockDashboard('Exited shared inbox.');
+});
+
+// Plans & Pricing Modal
+function openPlansDialog() {
+  updatePlanUI();
+  $('plans-dialog').showModal();
 }
+$('upgrade-plan-btn').addEventListener('click', openPlansDialog);
+$('topbar-plans-btn').addEventListener('click', openPlansDialog);
+$('profile-upgrade-btn').addEventListener('click', () => {
+  $('profile-dialog').close();
+  openPlansDialog();
+});
+
+// Complete User Profile Dialog
+async function openProfileDialog() {
+  if (state.isGuest) return;
+  try {
+    const prof = await api('/api/profile');
+    $('profile-name').value = prof.name || '';
+    $('profile-email').value = prof.email || '';
+    $('profile-phone').value = prof.phone || '';
+    $('profile-company').value = prof.company || '';
+    $('profile-bio').value = prof.bio || '';
+    const planObj = PLANS[(prof.plan || state.currentPlan || 'free').toUpperCase()] || PLANS.FREE;
+    $('profile-plan-name').textContent = `${planObj.name} (${planObj.maxAccounts} accounts)`;
+    notice('profile-notice');
+    $('profile-dialog').showModal();
+  } catch (err) {
+    report(err);
+  }
+}
+
+$('profile-button').addEventListener('click', openProfileDialog);
+$('profile-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  notice('profile-notice');
+  const btn = event.submitter;
+  btn.disabled = true;
+  try {
+    const updated = await api('/api/profile', {
+      method: 'POST',
+      body: {
+        name: $('profile-name').value.trim(),
+        email: $('profile-email').value.trim(),
+        phone: $('profile-phone').value.trim(),
+        company: $('profile-company').value.trim(),
+        bio: $('profile-bio').value.trim()
+      }
+    });
+    if (updated.name) {
+      $('profile-button').textContent = initials(updated.name);
+    }
+    $('profile-dialog').close();
+    toast('Profile saved successfully in RTDB.');
+  } catch (err) {
+    report(err, 'profile-notice');
+  } finally {
+    btn.disabled = false;
+  }
+});
 $('signout').addEventListener('click', () => {
   $('profile-dialog').close();
-  signOut();
+  lockDashboard('Dashboard locked.');
 });
+
+// Shared Inboxes Management
+function openShareDialog() {
+  if (state.isGuest) return;
+  const accounts = state.accounts;
+  if (!accounts.length) {
+    toast('Add a Gmail account before creating a shared inbox link.', true);
+    return;
+  }
+  $('share-account-select').innerHTML = accounts.map(a => `<option value="${esc(a.id)}">${esc(a.label || a.email)} (${esc(a.email)})</option>`).join('');
+  $('share-form').reset();
+  $('share-passcode').type = 'password';
+  notice('share-notice');
+  $('share-dialog').showModal();
+}
+$('share-inbox-btn').addEventListener('click', openShareDialog);
+$('share-inbox-header-btn').addEventListener('click', openShareDialog);
+$('add-share').addEventListener('click', openShareDialog);
+$('toggle-share-pwd').addEventListener('click', () => {
+  $('share-passcode').type = $('share-passcode').type === 'password' ? 'text' : 'password';
+});
+$('share-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  notice('share-notice');
+  const accountId = $('share-account-select').value;
+  const label = $('share-label').value.trim();
+  const passcode = $('share-passcode').value;
+
+  const btn = event.submitter;
+  btn.disabled = true;
+  try {
+    await api('/api/shares', {
+      method: 'POST',
+      body: { accountId, label, passcode }
+    });
+    $('share-dialog').close();
+    $('share-form').reset();
+    toast('Shared inbox passcode created! The recipient can enter it at the Gate screen.');
+    if (state.settings) renderSettingsShares();
+  } catch (err) {
+    report(err, 'share-notice');
+  } finally {
+    btn.disabled = false;
+  }
+});
+$('settings-shares').addEventListener('click', async event => {
+  const remove = event.target.closest('[data-remove-share]');
+  if (remove && await askConfirm('Revoke shared access?', 'This will immediately revoke the guest passcode. The recipient will no longer be able to access this inbox.', 'Revoke access')) {
+    try {
+      await api(`/api/shares/${remove.dataset.removeShare}`, { method: 'DELETE' });
+      await renderSettingsShares();
+      toast('Shared inbox access revoked.');
+    } catch (err) {
+      report(err);
+    }
+  }
+});
+
+// Passwords Toggle & Copy Buttons
+$('toggle-gmail-pwd').addEventListener('click', () => {
+  $('saved-gmail-password').type = $('saved-gmail-password').type === 'password' ? 'text' : 'password';
+});
+$('toggle-app-pwd').addEventListener('click', () => {
+  $('saved-app-password').type = $('saved-app-password').type === 'password' ? 'text' : 'password';
+});
+$('show-app-pwd-btn').addEventListener('click', () => {
+  $('revealed-app-password').type = $('revealed-app-password').type === 'password' ? 'text' : 'password';
+});
+$('show-gmail-pwd-btn').addEventListener('click', () => {
+  $('revealed-gmail-password').type = $('revealed-gmail-password').type === 'password' ? 'text' : 'password';
+});
+$('copy-app-pwd-btn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('revealed-app-password').value);
+    toast('App password copied to clipboard.');
+  } catch {
+    toast('Clipboard access denied.', true);
+  }
+});
+$('copy-gmail-pwd-btn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('revealed-gmail-password').value);
+    toast('Gmail password copied to clipboard.');
+  } catch {
+    toast('Clipboard access denied.', true);
+  }
+});
+
 for (const id of ['lock-button', 'settings-lock']) $(id).addEventListener('click', () => lockDashboard());
-$('profile-button').addEventListener('click', () => { $('profile-email').textContent = state.user?.email || 'Demo workspace · no real Gmail connected'; $('profile-dialog').showModal(); });
 $('menu-toggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
 document.addEventListener('click', event => { if ($('sidebar').classList.contains('open') && !event.target.closest('#sidebar, #menu-toggle')) $('sidebar').classList.remove('open'); });
 for (const id of ['connect-sidebar', 'connect-main']) $(id).addEventListener('click', () => beginConnect());
 $('compose-button').addEventListener('click', () => { openCompose(); $('sidebar').classList.remove('open'); });
 $('sidebar').addEventListener('click', async event => {
-  const folder = event.target.closest('[data-folder]'); if (folder) { state.folder = folder.dataset.folder; state.search = ''; $('search').value = ''; state.settings = false; $('settings-area').hidden = true; $('mail-area').hidden = false; $('sidebar').classList.remove('open'); await loadMessages(); }
-  const account = event.target.closest('[data-account]'); if (account) { state.account = account.dataset.account; renderAccounts(); state.settings = false; $('settings-area').hidden = true; $('mail-area').hidden = false; $('sidebar').classList.remove('open'); await loadMessages(); }
+  const folder = event.target.closest('[data-folder]');
+  if (folder) {
+    if (state.isGuest && folder.dataset.folder !== 'INBOX') return;
+    state.folder = folder.dataset.folder;
+    state.search = '';
+    $('search').value = '';
+    state.settings = false;
+    $('settings-area').hidden = true;
+    $('mail-area').hidden = false;
+    $('sidebar').classList.remove('open');
+    await loadMessages();
+  }
+  const account = event.target.closest('[data-account]');
+  if (account) {
+    if (state.isGuest) return;
+    state.account = account.dataset.account;
+    renderAccounts();
+    state.settings = false;
+    $('settings-area').hidden = true;
+    $('mail-area').hidden = false;
+    $('sidebar').classList.remove('open');
+    await loadMessages();
+  }
 });
 $('search-form').addEventListener('submit', event => { event.preventDefault(); state.search = $('search').value.trim(); loadMessages(); });
 document.querySelectorAll('[data-filter]').forEach(el => el.addEventListener('click', () => { state.filter = el.dataset.filter; loadMessages(); }));
@@ -427,8 +951,23 @@ $('refresh-button').addEventListener('click', async () => {
   }
 });
 $('load-more').addEventListener('click', () => loadMessages(true));
-$('message-list').addEventListener('click', async event => { const open = event.target.closest('[data-open]'); if (open) openThread(state.messages[Number(open.dataset.open)]); const star = event.target.closest('[data-star]'); if (star) { star.disabled = true; const m = state.messages[Number(star.dataset.star)]; try { await messageAction(m, m.starred ? 'unstar' : 'star'); } catch (err) { report(err); star.disabled = false; } } if (event.target.closest('[data-connect-first]')) beginConnect(); if (event.target.closest('[data-retry]')) loadMessages(); });
-$('inbox-errors').addEventListener('click', event => { const button = event.target.closest('[data-reconnect]'); if (button) beginConnect(button.dataset.reconnect); });
+$('message-list').addEventListener('click', async event => {
+  const open = event.target.closest('[data-open]');
+  if (open) openThread(state.messages[Number(open.dataset.open)]);
+  const star = event.target.closest('[data-star]');
+  if (star) {
+    star.disabled = true;
+    const m = state.messages[Number(star.dataset.star)];
+    try { await messageAction(m, m.starred ? 'unstar' : 'star'); }
+    catch (err) { report(err); star.disabled = false; }
+  }
+  if (event.target.closest('[data-connect-first]')) beginConnect();
+  if (event.target.closest('[data-retry]')) loadMessages();
+});
+$('inbox-errors').addEventListener('click', event => {
+  const button = event.target.closest('[data-reconnect]');
+  if (button) beginConnect(button.dataset.reconnect);
+});
 $('reader').addEventListener('click', async event => {
   if (event.target.closest('[data-reader-close]')) { closeReader(); renderMessages(); return; }
   const action = event.target.closest('[data-thread-action]'); if (action) { action.disabled = true; await threadAction(action.dataset.threadAction); return; }
@@ -447,16 +986,74 @@ $('settings-accounts').addEventListener('click', async event => {
   const remove = event.target.closest('[data-remove-account]'); if (remove && await askConfirm('Remove this account?', 'This removes its saved password and Gmail connection from this workspace. Your Gmail messages will stay in Google.', 'Remove account')) { try { await api(`/api/accounts/${remove.dataset.removeAccount}`, { method: 'DELETE', body: {} }); await loadAccounts(); toast('Account removed from this workspace.'); } catch (err) { report(err); } }
   const disconnect = event.target.closest('[data-disconnect]'); if (disconnect && await askConfirm('Disconnect this inbox?', 'This removes the saved Gmail token. Account details stay in your vault. You can reconnect later.', 'Disconnect')) { try { await api(`/api/accounts/${disconnect.dataset.disconnect}/disconnect`, { method: 'POST', body: {} }); await loadAccounts(); toast('Inbox disconnected.'); } catch (err) { report(err); } }
 });
-$('account-form').addEventListener('submit', async event => { event.preventDefault(); notice('account-notice'); if ($('clear-password').checked && $('saved-password').value) { notice('account-notice', 'Choose either a new password or remove the saved one.'); return; } const button = event.submitter; button.disabled = true; try { await api('/api/accounts', { method: 'PUT', body: { email: $('saved-email').value.trim(), label: $('saved-label').value.trim(), password: $('saved-password').value || undefined, clearPassword: $('clear-password').checked } }); $('saved-password').value = ''; $('account-dialog').close(); await loadAccounts(); toast(demo ? 'Sample account saved in memory. Demo only.' : 'Account details saved securely.'); } catch (err) { report(err, 'account-notice'); } finally { button.disabled = false; } });
+
+$('account-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  notice('account-notice');
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const aid = $('account-form').dataset.accountId || undefined;
+    await api('/api/accounts', {
+      method: 'PUT',
+      body: {
+        id: aid,
+        email: $('saved-email').value.trim(),
+        label: $('saved-label').value.trim(),
+        gmailPassword: $('saved-gmail-password').value || undefined,
+        appPassword: $('saved-app-password').value || undefined,
+        clearGmailPassword: $('clear-gmail-pwd').checked,
+        clearAppPassword: $('clear-app-pwd').checked
+      }
+    });
+    $('saved-gmail-password').value = '';
+    $('saved-app-password').value = '';
+    $('account-dialog').close();
+    await loadAccounts();
+    if (state.settings) renderSettingsAccounts();
+    toast('Account & passwords saved securely in RTDB.');
+  } catch (err) {
+    report(err, 'account-notice');
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $('change-lock').addEventListener('click', () => { $('change-lock-form').reset(); notice('change-lock-notice'); $('change-lock-dialog').showModal(); });
-$('change-lock-form').addEventListener('submit', async event => { event.preventDefault(); if ($('new-passcode').value !== $('repeat-passcode').value) { notice('change-lock-notice', 'The new passcodes do not match.'); return; } const button = event.submitter; button.disabled = true; try { const session = await api('/api/lock/change', { method: 'POST', body: { currentPasscode: $('current-passcode').value, passcode: $('new-passcode').value } }); state.vaultToken = session.token; state.expiresAt = session.expiresAt; $('change-lock-dialog').close(); $('change-lock-form').reset(); toast(demo ? 'Passcode change previewed. Demo unlock remains demo1234.' : 'Passcode updated. Other sessions are now locked.'); } catch (err) { report(err, 'change-lock-notice'); } finally { button.disabled = false; } });
+$('change-lock-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if ($('new-passcode').value !== $('repeat-passcode').value) {
+    notice('change-lock-notice', 'The new passcodes do not match.');
+    return;
+  }
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const session = await api('/api/lock/change', {
+      method: 'POST',
+      body: { currentPasscode: $('current-passcode').value, passcode: $('new-passcode').value }
+    });
+    state.vaultToken = session.token;
+    state.expiresAt = session.expiresAt;
+    $('change-lock-dialog').close();
+    $('change-lock-form').reset();
+    toast(demo ? 'Passcode change previewed. Demo unlock remains demo1234.' : 'Passcode updated. Other sessions are now locked.');
+  } catch (err) {
+    report(err, 'change-lock-notice');
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(el.dataset.close).close()));
-$('account-dialog').addEventListener('close', () => { $('saved-password').value = ''; });
+$('account-dialog').addEventListener('close', () => {
+  $('saved-gmail-password').value = '';
+  $('saved-app-password').value = '';
+  delete $('account-form').dataset.accountId;
+});
 $('change-lock-dialog').addEventListener('close', () => $('change-lock-form').reset());
-$('password-dialog').addEventListener('close', clearRevealedPassword);
-$('show-saved-password').addEventListener('click', () => { $('revealed-password').type = $('revealed-password').type === 'password' ? 'text' : 'password'; $('show-saved-password').textContent = $('revealed-password').type === 'password' ? 'Show' : 'Hide'; });
-$('copy-saved-password').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('revealed-password').value); toast('Password copied.'); } catch { toast('Clipboard access was denied. Use Show to copy it manually.', true); } });
-$('confirm-cancel').addEventListener('click', () => $('confirm-dialog').close('cancel')); $('confirm-ok').addEventListener('click', () => $('confirm-dialog').close('confirm'));
+$('password-dialog').addEventListener('close', clearRevealedPasswords);
+$('confirm-cancel').addEventListener('click', () => $('confirm-dialog').close('cancel'));
+$('confirm-ok').addEventListener('click', () => $('confirm-dialog').close('confirm'));
 $('compose-close').addEventListener('click', closeComposer); $('compose-dialog').addEventListener('cancel', event => { event.preventDefault(); closeComposer(); });
 $('compose-form').addEventListener('input', composerChanged);
 $('compose-from').addEventListener('change', () => { if (state.compose) { state.compose.accountId = $('compose-from').value; composerChanged(); } });

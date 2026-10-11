@@ -5,3 +5,44 @@
 @media(max-width:800px){.gate{grid-template-columns:1fr}.gate-story{min-height:300px;padding:25px 34px}.gate-brand{margin-bottom:28px;font-size:22px}.gate-copy h1{font-size:37px;letter-spacing:-1.5px;margin:15px 0}.gate-copy p{font-size:12px;max-width:270px;margin:0}.gate-foot{display:none}.mail-art{position:absolute;right:-5px;top:58px;transform:scale(.6);transform-origin:right center;width:370px;margin:0;opacity:.7}.gate-copy{position:relative;z-index:1}.gate-panel{padding:36px 25px}.gate-icon{display:none}.gate-card>p{margin-bottom:19px}.gate-copyright{margin-top:30px}.sidebar{width:220px;transform:translateX(-100%);transition:transform .2s}.sidebar.open{transform:translateX(0);box-shadow:10px 0 70px #18372e44}.main{width:100%;margin-left:0}.mobile-only{display:flex}.topbar{height:64px;padding:0 20px}.topbar-left,.topbar-right{gap:9px}.topbar-label,.topbar-slash,.session-label{display:none}.mail-area,.settings-area{padding:26px 20px 20px}.page-heading h1{font-size:29px;margin-top:9px}.page-heading>.button{font-size:11px;padding:9px 12px;min-height:38px}.page-heading>.button svg{width:15px}.page-heading .eyebrow{font-size:8px}.page-heading p{font-size:11px}.page-heading{margin-bottom:22px}.settings-grid{grid-template-columns:1fr}.audit-card{grid-column:auto}.settings-card{padding:20px}.toolbar-actions{gap:5px}.toolbar-actions select{max-width:130px}.toolbar-actions>span{display:none}.filter-pill{padding:6px 10px}.message-row{padding:17px 13px;gap:10px}.sender-avatar{width:33px;height:33px;font-size:10px}.message-main-top{gap:7px}.sender-name{max-width:48%;font-size:10px}.account-tag{font-size:7px}.message-date{font-size:8px}.message-subject{font-size:11px}.message-preview{display:block;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}.message-row .star-button{width:21px;height:25px}.message-row .star-button svg{width:16px}.mail-footer>span:last-child{display:none}.mail-footer>span:first-child{font-size:8px}.message-layout.has-reader .message-list-wrap{display:none}.reader{width:100%;max-height:none}.reader-content{padding:21px}.email-frame{min-height:290px}.compose-dialog textarea{min-height:210px}.draft-status{display:none}.compose-footer{padding:14px 20px}.compose-footer-left{gap:7px}.dialog-header{padding:20px}.compose-fields{padding:0 20px}.compose-dialog textarea{padding:20px}.cc-toggle{right:20px}.searchbar .button{display:none}.search-key{display:none}.saved-account-main{min-width:130px}.saved-account-actions{width:100%;padding-left:41px}.gate-divider{margin:25px 0 20px}}
 @media(max-width:420px){.mail-art{opacity:.26;right:-60px}.topbar-right{gap:8px}.demo-badge{font-size:7px;padding:4px 5px}.page-heading{align-items:flex-start}.page-heading>.button{margin-top:25px;font-size:10px}.sender-name{max-width:41%}.message-main-top{gap:5px}.message-date{font-size:8px}.reader-time{max-width:85px}.compose-footer .text-button{font-size:10px}.compose-footer .button{padding:10px;font-size:10px}.settings-area .page-heading>.button{font-size:9px;padding:8px}.gate-card h2{font-size:25px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Firemail AI Enhanced Features: Gate Tabs, Pricing Plans, Shared Inboxes, Profiles */
+.gate-tabs{display:flex;background:#edf2e5;padding:4px;border-radius:10px;margin-bottom:24px;gap:4px}
+.gate-tab{flex:1;padding:8px 12px;border-radius:7px;background:transparent;color:var(--muted);font-weight:600;font-size:12px;transition:all .15s}
+.gate-tab.active{background:white;color:var(--green);box-shadow:0 2px 6px #0b241712}
+.critical-warning-box{display:flex;gap:12px;align-items:flex-start;background:#fff4ea;border:1px solid #f6cca0;color:#854418;border-radius:9px;padding:12px 14px;margin-bottom:18px;font-size:12px;line-height:1.5}
+.critical-warning-box .warning-icon{color:#cb681e;width:20px;height:20px;flex-shrink:0;margin-top:2px}
+.critical-warning-box strong{color:#6c330f;display:block;margin-bottom:3px}
+.critical-warning-box p{margin:0}
+.gate-recovery-hint{font-size:11px;color:#899786;margin-top:18px;display:flex;align-items:center;gap:6px;justify-content:center}
+.gate-recovery-hint a{color:var(--green);text-decoration:underline}
+.guest-banner{background:#1a4134;color:#d5eed2;padding:11px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;font-size:12px;border-bottom:1px solid #2e594a}
+.guest-banner svg{width:16px;height:16px;color:var(--mint)}
+.heading-buttons{display:flex;gap:10px;align-items:center}
+.plan-widget{background:#ffffff0d;border:1px solid #ffffff14;border-radius:8px;padding:10px 12px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.plan-widget-info{display:flex;flex-direction:column}
+.plan-tag{font-size:10px;font-weight:700;color:var(--mint);text-transform:uppercase;letter-spacing:1px}
+.plan-usage{font-size:10px;color:#9ec2aa}
+.plan-pill{display:inline-flex;align-items:center;gap:6px;background:#eef4e7;border:1px solid #d5e0cb;color:var(--green);font-size:10px;font-weight:700;padding:5px 10px;border-radius:20px}
+.plan-pill:hover{background:#e3edd7}
+.plan-pill svg{width:12px;height:12px;color:#679b4e}
+.medium-dialog{width:min(900px,calc(100% - 28px));padding:28px}
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin:24px 0 16px}
+.plan-card{border:1px solid var(--line);border-radius:12px;padding:22px 18px;display:flex;flex-direction:column;background:white;position:relative;transition:all .2s}
+.plan-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px #09211612}
+.plan-card.featured{border-color:#7da76e;background:#fafdf8;box-shadow:0 8px 24px #3d6b3318}
+.plan-card.active-plan{border-color:#486b5c;background:#f8faf6}
+.plan-badge-tag{position:absolute;top:-10px;right:16px;background:#55784c;color:white;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.8px}
+.plan-badge-tag.featured-tag{background:#3b6d44}
+.plan-card h3{margin:0 0 8px;font-size:16px;font-weight:600}
+.plan-price{font-size:26px;font-weight:750;color:var(--ink);margin-bottom:4px}
+.plan-price span{font-size:11px;color:var(--muted);font-weight:400}
+.plan-desc{font-size:11px;color:var(--muted);margin:0 0 16px;line-height:1.5}
+.plan-features{list-style:none;padding:0;margin:0 0 20px;font-size:11px;color:#556254;display:grid;gap:8px}
+.plan-card .button{margin-top:auto}
+.plan-footer-note{display:flex;align-items:center;gap:10px;background:#f3f6ee;padding:12px 16px;border-radius:8px;font-size:11px;color:#62755e}
+.plan-footer-note svg{width:16px;height:16px;color:#789c65;flex-shrink:0}
+.profile-plan-status{display:flex;align-items:center;justify-content:space-between;background:#f2f6ed;border:1px solid #d9e4d0;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--green)}
+.profile-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.password-account-header{font-size:12px;font-weight:600;color:var(--green);margin:0 0 14px}
+.password-field .button.small{position:absolute;right:40px;top:5px;min-height:34px;padding:0 10px}

@@ -22,61 +22,155 @@
       <div class="gate-card">
         <div class="gate-icon" data-icon="lock"></div>
         <span class="eyebrow">YOUR PRIVATE WORKSPACE</span>
-        <h2 id="gate-title">Dashboard Lock</h2>
-        <p id="gate-description">Enter your master passcode to unlock Firemail AI and access all stored accounts.</p>
+        <h2 id="gate-title">Firemail AI Access</h2>
+        <p id="gate-description">Unlock your workspace, enter a shared inbox, or create a new passcode.</p>
+        <div id="gate-tabs" class="gate-tabs">
+          <button type="button" class="gate-tab active" id="tab-unlock">Unlock</button>
+          <button type="button" class="gate-tab" id="tab-create">Create Workspace</button>
+        </div>
         <div id="gate-notice" class="notice" hidden></div>
+        
+        <!-- Unlock Form (Master, Workspace, or Shared Inbox Guest) -->
         <form id="unlock-form">
-          <label for="passcode">Dashboard passcode</label>
-          <div class="password-field"><input id="passcode" name="passcode" type="password" minlength="4" maxlength="128" autocomplete="current-password" required placeholder="Enter your master passcode"><button type="button" class="icon-button" id="toggle-passcode" aria-label="Show passcode" data-icon="eye"></button></div>
-          <div id="confirm-field" hidden><label for="confirm-passcode">Confirm passcode</label><input id="confirm-passcode" name="confirm" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Enter it once more"></div>
-          <p class="field-hint" id="lock-hint">Stored in Firebase RTDB. Locks after 10 minutes of inactivity.</p>
-          <button class="button primary wide" id="unlock-button" type="submit">Unlock dashboard <span data-icon="arrow-right"></span></button>
+          <label for="passcode">Enter Passcode</label>
+          <div class="password-field">
+            <input id="passcode" name="passcode" type="password" minlength="4" maxlength="128" autocomplete="current-password" required placeholder="Master, workspace, or shared passcode">
+            <button type="button" class="icon-button" id="toggle-passcode" aria-label="Show passcode" data-icon="eye"></button>
+          </div>
+          <div id="confirm-field" hidden>
+            <label for="confirm-passcode">Confirm Passcode</label>
+            <input id="confirm-passcode" name="confirm" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Confirm your passcode">
+          </div>
+          <p class="field-hint" id="lock-hint">Works for Master Passcode, User Workspaces, or Shared Guest Inboxes.</p>
+          <button class="button primary wide" id="unlock-button" type="submit">Unlock Workspace <span data-icon="arrow-right"></span></button>
+          <p class="gate-recovery-hint"><span data-icon="shield"></span> Lost your passcode? Contact admin at <a href="mailto:mrsmithcons@gmail.com">mrsmithcons@gmail.com</a> for recovery.</p>
         </form>
-        <p class="gate-small">Your Gmail accounts and master passcode lock are stored directly in Firebase Realtime Database.</p>
+
+        <!-- Create Workspace Form (Multi-Tenant with Plan & Warning) -->
+        <form id="create-ws-form" hidden>
+          <div class="critical-warning-box">
+            <span class="warning-icon" data-icon="alert"></span>
+            <div>
+              <strong>CRITICAL: Save your passcode!</strong>
+              <p>Write down or save your passcode securely right now. If lost, <strong>nobody can recover your account except the admin at mrsmithcons@gmail.com</strong>.</p>
+            </div>
+          </div>
+          <label for="ws-name">Your Name / Workspace Name</label>
+          <input id="ws-name" type="text" maxlength="60" required placeholder="e.g. Alex Smith or My Studio">
+          
+          <label for="ws-email">Contact / Recovery Email <span class="optional">optional</span></label>
+          <input id="ws-email" type="email" maxlength="254" placeholder="For admin identity verification if lost">
+
+          <label for="ws-passcode">Choose Passcode</label>
+          <div class="password-field">
+            <input id="ws-passcode" type="password" minlength="4" maxlength="128" required placeholder="At least 4 characters">
+            <button type="button" class="icon-button" id="toggle-ws-passcode" aria-label="Show passcode" data-icon="eye"></button>
+          </div>
+
+          <label for="ws-confirm">Confirm Passcode</label>
+          <input id="ws-confirm" type="password" minlength="4" maxlength="128" required placeholder="Enter passcode once more">
+
+          <p class="field-hint">Starts on the <strong>Free Plan</strong> (Save up to 5 accounts/mails free). Upgrades available anytime.</p>
+          <button class="button primary wide" id="create-ws-button" type="submit">Create Workspace & Save Passcode <span data-icon="arrow-right"></span></button>
+        </form>
       </div>
-      <span class="gate-copyright">FIREMAIL AI · YOUR PRIVATE INBOX</span>
+      <span class="gate-copyright">FIREMAIL AI · MULTI-INBOX WORKSPACE</span>
     </section>
   </div>
 
   <div id="workspace" class="workspace" hidden>
+    <!-- Shared Guest Banner (Shown only when in shared mode) -->
+    <div id="guest-banner" class="guest-banner" hidden>
+      <span data-icon="shield"></span>
+      <span><strong>Shared Inbox Access (Guest Mode)</strong> · You have read & compose access to this inbox only.</span>
+      <button id="guest-exit" class="button small secondary">Exit</button>
+    </div>
+
     <aside id="sidebar" class="sidebar">
       <a class="brand" href="/" aria-label="Firemail AI home"><span class="brand-mark" data-icon="mail"></span><span>firemail<span class="brand-dot">ai.</span></span></a>
       <button class="compose-button" id="compose-button"><span data-icon="plus"></span> Compose <kbd>C</kbd></button>
+      
+      <!-- Plan Tier Widget -->
+      <div id="plan-widget" class="plan-widget">
+        <div class="plan-widget-info">
+          <span class="plan-tag" id="plan-name">Free Plan</span>
+          <span class="plan-usage" id="plan-usage">0 / 5 accounts</span>
+        </div>
+        <button id="upgrade-plan-btn" class="button small secondary">Upgrade</button>
+      </div>
+
       <div class="sidebar-label">WORKSPACE</div>
       <nav class="folder-nav" aria-label="Mail folders">
         <button class="nav-item active" data-folder="INBOX"><span data-icon="inbox"></span><span>Inbox</span><span id="unread-count" class="nav-count">0</span></button>
-        <button class="nav-item" data-folder="STARRED"><span data-icon="star"></span><span>Starred</span></button>
+        <button class="nav-item" data-folder="STARRED" id="nav-starred"><span data-icon="star"></span><span>Starred</span></button>
         <button class="nav-item" data-folder="SENT"><span data-icon="send"></span><span>Sent</span></button>
-        <button class="nav-item" data-folder="DRAFT"><span data-icon="file"></span><span>Drafts</span></button>
-        <button class="nav-item" data-folder="ALL"><span data-icon="layers"></span><span>All mail</span></button>
-        <button class="nav-item" data-folder="SPAM"><span data-icon="alert"></span><span>Spam</span></button>
-        <button class="nav-item" data-folder="TRASH"><span data-icon="trash"></span><span>Trash</span></button>
+        <button class="nav-item" data-folder="DRAFT" id="nav-draft"><span data-icon="file"></span><span>Drafts</span></button>
+        <button class="nav-item" data-folder="ALL" id="nav-all"><span data-icon="layers"></span><span>All mail</span></button>
+        <button class="nav-item" data-folder="SPAM" id="nav-spam"><span data-icon="alert"></span><span>Spam</span></button>
+        <button class="nav-item" data-folder="TRASH" id="nav-trash"><span data-icon="trash"></span><span>Trash</span></button>
       </nav>
-      <div class="sidebar-label account-heading">YOUR ACCOUNTS<button id="connect-sidebar" class="icon-button light" aria-label="Connect a Gmail account" data-icon="plus"></button></div>
+      <div class="sidebar-label account-heading" id="accounts-heading">YOUR ACCOUNTS<button id="connect-sidebar" class="icon-button light" aria-label="Connect a Gmail account" data-icon="plus"></button></div>
       <div id="account-nav" class="account-nav"></div>
-      <div class="sidebar-bottom"><button id="settings-button" class="nav-item"><span data-icon="settings"></span><span>Accounts & lock</span></button><div class="secure-label"><span class="status-dot"></span> Private workspace<button id="lock-button" class="icon-button light" data-icon="lock" aria-label="Lock dashboard"></button></div></div>
+      <div class="sidebar-bottom">
+        <button id="share-inbox-btn" class="nav-item"><span data-icon="share"></span><span>Share Inbox</span></button>
+        <button id="settings-button" class="nav-item"><span data-icon="settings"></span><span>Accounts & lock</span></button>
+        <div class="secure-label"><span class="status-dot"></span> Private workspace<button id="lock-button" class="icon-button light" data-icon="lock" aria-label="Lock dashboard"></button></div>
+      </div>
     </aside>
     <main class="main">
       <header class="topbar">
         <div class="topbar-left"><button id="menu-toggle" class="icon-button mobile-only" data-icon="menu" aria-label="Open navigation"></button><span class="topbar-label">Your workspace</span><span class="topbar-slash">/</span><span id="breadcrumb">All accounts</span></div>
-        <div class="topbar-right"><span id="demo-badge" class="demo-badge" hidden>DEMO · SAMPLE MAIL</span><span id="session-label" class="session-label">Unlocked</span><button id="profile-button" class="profile-avatar" aria-label="Account and sign-out options">FY</button></div>
+        <div class="topbar-right">
+          <button id="topbar-plans-btn" class="plan-pill"><span data-icon="zap"></span> <span id="topbar-plan-label">Free Plan</span></button>
+          <span id="demo-badge" class="demo-badge" hidden>DEMO · SAMPLE MAIL</span>
+          <span id="session-label" class="session-label">Unlocked</span>
+          <button id="profile-button" class="profile-avatar" aria-label="Account and profile options">FY</button>
+        </div>
       </header>
       <section class="mail-area" id="mail-area">
-        <div class="page-heading"><div><span class="eyebrow">A LITTLE MORE ORGANIZED</span><h1 id="folder-title">Inbox<span class="heading-dot">.</span></h1><p id="folder-description">All your conversations, in one place.</p></div><button id="connect-main" class="button secondary"><span data-icon="plus"></span> Connect Gmail</button></div>
+        <div class="page-heading">
+          <div><span class="eyebrow">A LITTLE MORE ORGANIZED</span><h1 id="folder-title">Inbox<span class="heading-dot">.</span></h1><p id="folder-description">All your conversations, in one place.</p></div>
+          <div class="heading-buttons">
+            <button id="share-inbox-header-btn" class="button secondary"><span data-icon="share"></span> Share Inbox</button>
+            <button id="connect-main" class="button primary"><span data-icon="plus"></span> Add Account</button>
+          </div>
+        </div>
         <form class="searchbar" id="search-form"><span data-icon="search"></span><input id="search" type="search" autocomplete="off" placeholder="Search mail — try from:someone or has:attachment" aria-label="Search Gmail"><span class="search-key">/</span><button class="button small secondary" type="submit">Search</button></form>
         <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
         <div class="message-layout" id="message-layout"><section class="message-list-wrap" aria-label="Messages"><div id="inbox-errors" class="inbox-errors" hidden></div><div id="message-list" class="message-list"></div><button id="load-more" class="button subtle load-more" hidden>Load more messages</button></section><section class="reader" id="reader" aria-label="Conversation" hidden></section></div>
-        <footer class="mail-footer"><span><span data-icon="shield"></span> Only your approved administrators can access this workspace</span><span id="sync-time">Ready when you are</span></footer>
+        <footer class="mail-footer"><span><span data-icon="shield"></span> Synchronized via Firebase RTDB + Automated Cloud Sync</span><span id="sync-time">Ready when you are</span></footer>
       </section>
       <section id="settings-area" class="settings-area" hidden>
-        <div class="page-heading"><div><span class="eyebrow">YOUR WORKSPACE, YOUR CONTROL</span><h1>Accounts & lock<span class="heading-dot">.</span></h1><p>Connect inboxes and manage your saved account details.</p></div><button id="back-inbox" class="button secondary"><span data-icon="arrow-left"></span> Back to inbox</button></div>
-        <div class="settings-grid"><section class="settings-card"><div class="card-heading"><div><h2>Gmail accounts</h2><p>Saved details and connected inboxes.</p></div><button id="add-account" class="button primary small"><span data-icon="plus"></span> Add account</button></div><div id="settings-accounts"></div><div class="settings-note"><span data-icon="info"></span><p>Saved passwords are encrypted. Gmail inbox access uses Google authorization, so you only connect each account once.</p></div></section>
-        <section class="settings-card lock-card"><div class="card-symbol" data-icon="lock"></div><h2>Dashboard lock</h2><p>Your passcode is stored as a secure verifier in RTDB. Each unlock expires after 30 minutes; idle tabs lock after 10.</p><button id="change-lock" class="button secondary wide">Change passcode</button><button id="settings-lock" class="button subtle wide">Lock now</button></section>
-        <section class="settings-card audit-card"><div class="card-heading"><div><h2>Recent activity</h2><p>Account changes, password reveals, and outgoing mail.</p></div><span data-icon="activity"></span></div><div id="audit-list"></div></section></div>
+        <div class="page-heading"><div><span class="eyebrow">YOUR WORKSPACE, YOUR CONTROL</span><h1>Accounts & lock<span class="heading-dot">.</span></h1><p>Connect inboxes, manage separate passwords, and view shared links.</p></div><button id="back-inbox" class="button secondary"><span data-icon="arrow-left"></span> Back to inbox</button></div>
+        <div class="settings-grid">
+          <section class="settings-card">
+            <div class="card-heading"><div><h2>Gmail accounts</h2><p>Saved details, passwords, and IMAP credentials.</p></div><button id="add-account" class="button primary small"><span data-icon="plus"></span> Add account</button></div>
+            <div id="settings-accounts"></div>
+            <div class="settings-note"><span data-icon="info"></span><p>Gmail Login Password and Google App Password are saved separately. Live 24/7 inbox sync uses your 16-character App Password.</p></div>
+          </section>
+          <section class="settings-card">
+            <div class="card-heading"><div><h2>Shared Inboxes</h2><p>Inboxes shared with colleagues or assistants via Passcode.</p></div><button id="add-share" class="button primary small"><span data-icon="share"></span> Share inbox</button></div>
+            <div id="settings-shares"></div>
+            <div class="settings-note"><span data-icon="shield"></span><p>Recipients can only read incoming mail and compose from the shared account. They cannot access other accounts or settings.</p></div>
+          </section>
+          <section class="settings-card lock-card">
+            <div class="card-symbol" data-icon="lock"></div>
+            <h2>Dashboard lock</h2>
+            <p>Your passcode is stored as a secure verifier in RTDB. Each unlock expires after 30 minutes; idle tabs lock after 10.</p>
+            <p class="field-hint">Lost passcode? Contact admin at <a href="mailto:mrsmithcons@gmail.com">mrsmithcons@gmail.com</a> for recovery.</p>
+            <button id="change-lock" class="button secondary wide">Change passcode</button>
+            <button id="settings-lock" class="button subtle wide">Lock now</button>
+          </section>
+          <section class="settings-card audit-card">
+            <div class="card-heading"><div><h2>Recent activity</h2><p>Account changes, password reveals, and outgoing mail.</p></div><span data-icon="activity"></span></div>
+            <div id="audit-list"></div>
+          </section>
+        </div>
       </section>
     </main>
   </div>
 
+  <!-- Compose Dialog -->
   <dialog id="compose-dialog" class="compose-dialog">
     <form id="compose-form">
       <div class="dialog-header"><div><span class="eyebrow">A NEW CONVERSATION</span><h2 id="compose-title">New message</h2></div><button id="compose-close" type="button" class="icon-button" data-icon="x" aria-label="Close compose"></button></div>
@@ -88,11 +182,230 @@
     </form>
   </dialog>
 
-  <dialog id="account-dialog" class="small-dialog"><form id="account-form"><div class="dialog-header"><h2 id="account-dialog-title">Save an account</h2><button type="button" class="icon-button" data-close="account-dialog" data-icon="x" aria-label="Close account form"></button></div><label for="saved-email">Gmail address</label><input id="saved-email" type="email" maxlength="254" autocomplete="off" required placeholder="you@gmail.com"><label for="saved-label">Account label</label><input id="saved-label" maxlength="60" placeholder="Personal, business, or a name" required><label for="saved-password">Password or App Password <span class="optional">optional</span></label><input id="saved-password" type="password" maxlength="2048" autocomplete="new-password" placeholder="16-character Google App Password"><label class="checkbox-label" id="clear-password-label" hidden><input type="checkbox" id="clear-password"> Remove the saved password</label><p class="field-hint">For live Gmail IMAP inbox sync, use a 16-character <strong>Google App Password</strong> (from <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>).</p><div id="account-notice" class="notice" hidden></div><button type="submit" class="button primary wide">Save account</button></form></dialog>
-  <dialog id="change-lock-dialog" class="small-dialog"><form id="change-lock-form"><div class="dialog-header"><h2>Change passcode</h2><button type="button" class="icon-button" data-close="change-lock-dialog" data-icon="x" aria-label="Close passcode form"></button></div><label for="current-passcode">Current passcode</label><input id="current-passcode" type="password" autocomplete="current-password" required><label for="new-passcode">New passcode</label><input id="new-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required><label for="repeat-passcode">Confirm new passcode</label><input id="repeat-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required><div id="change-lock-notice" class="notice" hidden></div><p class="field-hint">Changing the passcode updates your RTDB master lock.</p><button type="submit" class="button primary wide">Update passcode</button></form></dialog>
-  <dialog id="password-dialog" class="small-dialog"><div class="dialog-header"><h2>Saved password</h2><button type="button" class="icon-button" data-close="password-dialog" data-icon="x" aria-label="Close saved password"></button></div><p id="password-email"></p><input id="revealed-password" type="password" readonly autocomplete="off" aria-label="Saved password"><div class="password-actions"><button id="show-saved-password" class="button secondary">Show</button><button id="copy-saved-password" class="button primary">Copy password</button></div><p class="field-hint">This reveal is recorded in your workspace activity.</p></dialog>
-  <dialog id="profile-dialog" class="small-dialog"><div class="dialog-header"><h2>Your dashboard</h2><button class="icon-button" data-close="profile-dialog" data-icon="x" aria-label="Close profile"></button></div><p id="profile-email"></p><button id="signout" class="button secondary wide">Lock dashboard</button></dialog>
-  <dialog id="confirm-dialog" class="small-dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-text"></p><div class="confirm-actions"><button id="confirm-cancel" class="button secondary">Cancel</button><button id="confirm-ok" class="button primary">Continue</button></div></dialog>
+  <!-- Add/Edit Account Dialog (Separating Gmail Password & App Password) -->
+  <dialog id="account-dialog" class="small-dialog">
+    <form id="account-form">
+      <div class="dialog-header"><h2 id="account-dialog-title">Save an account</h2><button type="button" class="icon-button" data-close="account-dialog" data-icon="x" aria-label="Close account form"></button></div>
+      <label for="saved-email">Gmail address</label>
+      <input id="saved-email" type="email" maxlength="254" autocomplete="off" required placeholder="you@gmail.com">
+      
+      <label for="saved-label">Account label</label>
+      <input id="saved-label" maxlength="60" placeholder="Personal, business, or a name" required>
+
+      <!-- Separate Password 1: Google Account Password -->
+      <label for="saved-gmail-password">Gmail Account Login Password <span class="optional">optional</span></label>
+      <div class="password-field">
+        <input id="saved-gmail-password" type="password" maxlength="2048" autocomplete="new-password" placeholder="Normal Google account password">
+        <button type="button" class="icon-button" id="toggle-gmail-pwd" aria-label="Show password" data-icon="eye"></button>
+      </div>
+      <label class="checkbox-label" id="clear-gmail-pwd-label" hidden><input type="checkbox" id="clear-gmail-pwd"> Remove Gmail Login password</label>
+
+      <!-- Separate Password 2: Google App Password for IMAP -->
+      <label for="saved-app-password">Google App Password (16-char IMAP) <span class="optional">recommended</span></label>
+      <div class="password-field">
+        <input id="saved-app-password" type="password" maxlength="2048" autocomplete="new-password" placeholder="16-character code (e.g. abcd efgh ijkl mnop)">
+        <button type="button" class="icon-button" id="toggle-app-pwd" aria-label="Show password" data-icon="eye"></button>
+      </div>
+      <label class="checkbox-label" id="clear-app-pwd-label" hidden><input type="checkbox" id="clear-app-pwd"> Remove App password</label>
+      
+      <p class="field-hint">Generate an App Password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> to enable 24/7 background sync.</p>
+      
+      <div id="account-notice" class="notice" hidden></div>
+      <button type="submit" class="button primary wide">Save account</button>
+    </form>
+  </dialog>
+
+  <!-- Share Inbox Dialog -->
+  <dialog id="share-dialog" class="small-dialog">
+    <form id="share-form">
+      <div class="dialog-header"><h2>Share Inbox via Passcode</h2><button type="button" class="icon-button" data-close="share-dialog" data-icon="x" aria-label="Close share form"></button></div>
+      <label for="share-account-select">Select Account to Share</label>
+      <select id="share-account-select" required></select>
+
+      <label for="share-label">Recipient Label / Name</label>
+      <input id="share-label" maxlength="60" required placeholder="e.g. Assistant, Client, Partner">
+
+      <label for="share-passcode">Guest Passcode</label>
+      <div class="password-field">
+        <input id="share-passcode" type="password" minlength="4" maxlength="128" required placeholder="Passcode for the guest to enter">
+        <button type="button" class="icon-button" id="toggle-share-pwd" aria-label="Show passcode" data-icon="eye"></button>
+      </div>
+
+      <div class="settings-note">
+        <span data-icon="shield"></span>
+        <p><strong>Restricted Access:</strong> The recipient can only access this specific inbox and compose emails. They cannot access other accounts or any settings.</p>
+      </div>
+
+      <div id="share-notice" class="notice" hidden></div>
+      <button type="submit" class="button primary wide">Create Shared Access Passcode</button>
+    </form>
+  </dialog>
+
+  <!-- Plans & Pricing Dialog -->
+  <dialog id="plans-dialog" class="medium-dialog">
+    <div class="dialog-header">
+      <div>
+        <span class="eyebrow">FIREMAIL AI SUBSCRIPTIONS</span>
+        <h2>Choose Your Plan</h2>
+      </div>
+      <button type="button" class="icon-button" data-close="plans-dialog" data-icon="x" aria-label="Close plans"></button>
+    </div>
+    <div class="pricing-grid">
+      <!-- Free Plan -->
+      <div class="plan-card active-plan" data-plan="free">
+        <div class="plan-badge-tag">Current Plan</div>
+        <h3>Free Plan</h3>
+        <div class="plan-price">$0 <span>/ month</span></div>
+        <p class="plan-desc">Save up to <strong>5 emails</strong></p>
+        <ul class="plan-features">
+          <li>✓ Up to 5 Gmail accounts</li>
+          <li>✓ 24/7 Automated sync</li>
+          <li>✓ Passcode master lock</li>
+          <li>✓ Inbox sharing via passcode</li>
+        </ul>
+        <button class="button secondary wide" disabled>Current Plan</button>
+      </div>
+
+      <!-- Starter Plan -->
+      <div class="plan-card" data-plan="starter">
+        <h3>Starter Plan</h3>
+        <div class="plan-price">$2 <span>/ month</span></div>
+        <p class="plan-desc">Save up to <strong>10 emails</strong></p>
+        <ul class="plan-features">
+          <li>✓ Up to 10 Gmail accounts</li>
+          <li>✓ 30-Second continuous sync</li>
+          <li>✓ Priority IMAP throughput</li>
+          <li>✓ Shared guest inboxes</li>
+        </ul>
+        <a href="mailto:mrsmithcons@gmail.com?subject=Firemail%20AI%20Upgrade%20to%20Starter%20Plan%20($2/mo)&body=Hello%20Admin,%20I%20would%20like%20to%20upgrade%20my%20Firemail%20AI%20workspace%20to%20the%20Starter%20Plan%20($2/month)%20for%2010%20accounts." class="button primary wide">Upgrade for $2/mo</a>
+      </div>
+
+      <!-- Pro Plan -->
+      <div class="plan-card featured" data-plan="pro">
+        <div class="plan-badge-tag featured-tag">Popular</div>
+        <h3>Pro Plan</h3>
+        <div class="plan-price">$5 <span>/ month</span></div>
+        <p class="plan-desc">Save up to <strong>25 emails</strong></p>
+        <ul class="plan-features">
+          <li>✓ Up to 25 Gmail accounts</li>
+          <li>✓ Unlimited automated sync</li>
+          <li>✓ Multiple shared guest links</li>
+          <li>✓ Fast dual delivery engine</li>
+        </ul>
+        <a href="mailto:mrsmithcons@gmail.com?subject=Firemail%20AI%20Upgrade%20to%20Pro%20Plan%20($5/mo)&body=Hello%20Admin,%20I%20would%20like%20to%20upgrade%20my%20Firemail%20AI%20workspace%20to%20the%20Pro%20Plan%20($5/month)%20for%2025%20accounts." class="button primary wide">Upgrade for $5/mo</a>
+      </div>
+
+      <!-- Business Plan -->
+      <div class="plan-card" data-plan="business">
+        <h3>Business Plan</h3>
+        <div class="plan-price">$10 <span>/ month</span></div>
+        <p class="plan-desc">Save up to <strong>50 emails</strong></p>
+        <ul class="plan-features">
+          <li>✓ Up to 50 Gmail accounts</li>
+          <li>✓ High-speed continuous delivery</li>
+          <li>✓ Custom shared inboxes</li>
+          <li>✓ Direct admin support</li>
+        </ul>
+        <a href="mailto:mrsmithcons@gmail.com?subject=Firemail%20AI%20Upgrade%20to%20Business%20Plan%20($10/mo)&body=Hello%20Admin,%20I%20would%20like%20to%20upgrade%20my%20Firemail%20AI%20workspace%20to%20the%20Business%20Plan%20($10/month)%20for%2050%20accounts." class="button primary wide">Upgrade for $10/mo</a>
+      </div>
+    </div>
+    <div class="plan-footer-note">
+      <span data-icon="info"></span>
+      <p>Need more than 50 accounts? Contact admin directly at <a href="mailto:mrsmithcons@gmail.com"><strong>mrsmithcons@gmail.com</strong></a> for custom high-volume plans.</p>
+    </div>
+  </dialog>
+
+  <!-- Complete User Profile Dialog -->
+  <dialog id="profile-dialog" class="small-dialog">
+    <form id="profile-form">
+      <div class="dialog-header">
+        <div>
+          <span class="eyebrow">YOUR WORKSPACE PROFILE</span>
+          <h2>Edit Profile</h2>
+        </div>
+        <button type="button" class="icon-button" data-close="profile-dialog" data-icon="x" aria-label="Close profile"></button>
+      </div>
+      
+      <div class="profile-plan-status">
+        <span>Current Tier: <strong id="profile-plan-name">Free Plan</strong> (5 Accounts)</span>
+        <button type="button" id="profile-upgrade-btn" class="button small secondary">Change</button>
+      </div>
+
+      <label for="profile-name">Full Name</label>
+      <input id="profile-name" type="text" maxlength="60" required placeholder="Chen Yu Ting">
+
+      <label for="profile-email">Contact & Recovery Email</label>
+      <input id="profile-email" type="email" maxlength="254" required placeholder="mrsmithcons@gmail.com">
+
+      <label for="profile-phone">Phone Number <span class="optional">optional</span></label>
+      <input id="profile-phone" type="tel" maxlength="40" placeholder="+1 (555) 000-0000">
+
+      <label for="profile-company">Company / Organization <span class="optional">optional</span></label>
+      <input id="profile-company" type="text" maxlength="80" placeholder="MrSmith Consulting">
+
+      <label for="profile-bio">Bio / Notes <span class="optional">optional</span></label>
+      <textarea id="profile-bio" rows="2" maxlength="300" placeholder="Workspace notes or administrator bio"></textarea>
+
+      <div class="settings-note">
+        <span data-icon="shield"></span>
+        <p>Passcode lost? Only the admin at <strong>mrsmithcons@gmail.com</strong> can verify your contact info and reset access.</p>
+      </div>
+
+      <div id="profile-notice" class="notice" hidden></div>
+      <div class="profile-actions">
+        <button type="submit" class="button primary wide">Save Profile</button>
+        <button type="button" id="signout" class="button subtle wide">Lock Dashboard</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reveal Passwords Dialog (Separate Gmail Login Password & App Password) -->
+  <dialog id="password-dialog" class="small-dialog">
+    <div class="dialog-header"><h2>Saved Passwords</h2><button type="button" class="icon-button" data-close="password-dialog" data-icon="x" aria-label="Close saved password"></button></div>
+    <p id="password-email" class="password-account-header"></p>
+    
+    <label for="revealed-app-password">Google App Password (16-char IMAP)</label>
+    <div class="password-field">
+      <input id="revealed-app-password" type="password" readonly autocomplete="off">
+      <button id="show-app-pwd-btn" type="button" class="icon-button" data-icon="eye" aria-label="Toggle App Password"></button>
+      <button id="copy-app-pwd-btn" type="button" class="button small secondary">Copy</button>
+    </div>
+
+    <label for="revealed-gmail-password">Gmail Account Login Password</label>
+    <div class="password-field">
+      <input id="revealed-gmail-password" type="password" readonly autocomplete="off">
+      <button id="show-gmail-pwd-btn" type="button" class="icon-button" data-icon="eye" aria-label="Toggle Gmail Password"></button>
+      <button id="copy-gmail-pwd-btn" type="button" class="button small secondary">Copy</button>
+    </div>
+
+    <p class="field-hint">Reveals are logged in your private audit history.</p>
+  </dialog>
+
+  <!-- Change Lock Dialog -->
+  <dialog id="change-lock-dialog" class="small-dialog">
+    <form id="change-lock-form">
+      <div class="dialog-header"><h2>Change passcode</h2><button type="button" class="icon-button" data-close="change-lock-dialog" data-icon="x" aria-label="Close passcode form"></button></div>
+      <label for="current-passcode">Current passcode</label>
+      <input id="current-passcode" type="password" autocomplete="current-password" required>
+      <label for="new-passcode">New passcode</label>
+      <input id="new-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required>
+      <label for="repeat-passcode">Confirm new passcode</label>
+      <input id="repeat-passcode" type="password" minlength="4" maxlength="128" autocomplete="new-password" required>
+      <div id="change-lock-notice" class="notice" hidden></div>
+      <p class="field-hint">Please write down your new passcode. If lost, recovery is only available via admin at mrsmithcons@gmail.com.</p>
+      <button type="submit" class="button primary wide">Update passcode</button>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="small-dialog">
+    <h2 id="confirm-title">Confirm action</h2>
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button id="confirm-cancel" class="button secondary">Cancel</button>
+      <button id="confirm-ok" class="button primary">Continue</button>
+    </div>
+  </dialog>
+
   <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
   <noscript><div class="noscript">Enable JavaScript to use your inbox dashboard.</div></noscript>
 </body>
