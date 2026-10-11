@@ -87,7 +87,8 @@ export async function syncAccount(account) {
               data: att.content ? att.content.toString('base64') : ''
             }));
 
-            const payload = {
+            // 1. Lightweight summary for instant inbox loading
+            const summaryPayload = {
               id: msgId,
               threadId: msgId,
               accountId: account.id,
@@ -98,17 +99,25 @@ export async function syncAccount(account) {
               bcc: parsed.bcc?.text || '',
               subject: parsed.subject || '(No subject)',
               snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 160) || 'Message',
-              text: parsed.text || '',
-              html: parsed.html || (parsed.text ? `<div style="font-family:sans-serif;line-height:1.6"><p>${parsed.text.replace(/\n/g, '<br>')}</p></div>` : ''),
               date: parsed.date ? parsed.date.getTime() : Date.now(),
               unread: isUnread,
               starred: isStarred,
               folder: 'INBOX',
               labels: isStarred ? ['INBOX', 'STARRED'] : ['INBOX'],
+              hasAttachments: attachments.length > 0,
+              attachmentsCount: attachments.length
+            };
+
+            // 2. Heavy body & attachments stored separately for on-demand reading
+            const bodyPayload = {
+              id: msgId,
+              text: parsed.text || '',
+              html: parsed.html || (parsed.text ? `<div style="font-family:sans-serif;line-height:1.6"><p>${parsed.text.replace(/\n/g, '<br>')}</p></div>` : ''),
               attachments
             };
 
-            await rtdbRequest(`mailroom/messages/${msgId}`, 'PUT', payload);
+            await rtdbRequest(`mailroom/messages/${msgId}`, 'PUT', summaryPayload);
+            await rtdbRequest(`mailroom/bodies/${msgId}`, 'PUT', bodyPayload);
             syncedCount++;
           } catch (err) {
             console.warn(`  ⚠️ Could not parse message UID ${message.uid}:`, err.message);

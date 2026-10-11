@@ -167,11 +167,54 @@ export async function removeAccount(accountId) {
 }
 
 // Messages APIs
-export async function getMessages({ folder = 'INBOX', account = 'all', q = '' } = {}) {
-  const data = await request('mailroom/messages');
-  if (!data) return { messages: [], errors: [], nextCursor: null };
+// Ultra-Fast In-Memory & Session Caching
+let _messagesCache = null;
+let _bodyCache = {};
+let _lastFetchTime = 0;
+const CACHE_TTL = 30000; // Cache valid for 30 seconds
 
-  let list = Object.values(data);
+// Load cache from sessionStorage on startup
+try {
+  const saved = sessionStorage.getItem('firemail_msgs_cache');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (Date.now() - parsed.savedAt < 120000) {
+      _messagesCache = parsed.data;
+      _lastFetchTime = parsed.savedAt;
+    }
+  }
+} catch {}
+
+export function invalidateMessageCache() {
+  _messagesCache = null;
+  _lastFetchTime = 0;
+  try { sessionStorage.removeItem('firemail_msgs_cache'); } catch {}
+}
+
+// Messages APIs (Optimized for Sub-Second Loading)
+export async function getMessages({ folder = 'INBOX', account = 'all', q = '', forceRefresh = false } = {}) {
+  const now = Date.now();
+  const isCacheValid = _messagesCache && (now - _lastFetchTime < CACHE_TTL) && !forceRefresh;
+
+  if (!isCacheValid) {
+    try {
+      const data = await request('mailroom/messages');
+      if (data) {
+        _messagesCache = Object.values(data);
+        _lastFetchTime = now;
+        try {
+          sessionStorage.setItem('firemail_msgs_cache', JSON.stringify({ savedAt: now, data: _messagesCache }));
+        } catch {}
+      } else {
+        _messagesCache = [];
+      }
+    } catch (err) {
+      console.warn('Failed to refresh messages, falling back to cache:', err);
+      if (!_messagesCache) throw err;
+    }
+  }
+
+  let list = [...(_messagesCache || [])];
 
   // Filter by account
   if (account && account !== 'all') {
@@ -213,34 +256,48 @@ export async function getMessages({ folder = 'INBOX', account = 'all', q = '' } 
 }
 
 export async function getThread(accountId, threadId) {
-  const data = await request('mailroom/messages');
-  if (!data) throw new Error('Thread not found');
-  const all = Object.values(data);
-  const threadMessages = all.filter(m => m.threadId === threadId || m.id === threadId);
-  if (!threadMessages.length) throw new Error('Message not found');
-  threadMessages.sort((a, b) => (a.date || 0) - (b.date || 0));
+  // 1. Find summary from local cache or single fetch (instant)
+  let summary = _messagesCache?.find(m => m.id === threadId || m.threadId === threadId);
+  if (!summary) {
+    summary = await request(`mailroom/messages/${threadId}`);
+  }
+  if (!summary) throw new Error('Message not found');
+
+  // 2. Fetch only this single message's body on demand (fast, ~1-5 KB)
+  let body = _bodyCache[threadId];
+  if (!body) {
+    try {
+      body = await request(`mailroom/bodies/${threadId}`);
+      if (body) _bodyCache[threadId] = body;
+    } catch {
+      // Fallback if body is still stored inline in old format
+      body = summary;
+    }
+  }
+
+  const finalBody = body || summary;
 
   return {
     id: threadId,
-    messages: threadMessages.map(m => ({
-      id: m.id,
-      threadId: m.threadId || m.id,
-      accountId: m.accountId,
-      accountEmail: m.accountEmail || m.to || '',
-      from: m.from || '',
-      to: m.to || '',
-      cc: m.cc || '',
-      bcc: m.bcc || '',
-      subject: m.subject || '',
-      snippet: m.snippet || '',
-      text: m.text || m.snippet || '',
-      html: m.html || `<div style="font-family:sans-serif;line-height:1.6;color:#333"><p>${(m.text || m.snippet || '').replace(/\n/g, '<br>')}</p></div>`,
-      date: m.date || Date.now(),
-      unread: Boolean(m.unread),
-      starred: Boolean(m.starred),
-      labels: m.labels || ['INBOX'],
-      attachments: m.attachments || []
-    }))
+    messages: [{
+      id: summary.id,
+      threadId: summary.threadId || summary.id,
+      accountId: summary.accountId,
+      accountEmail: summary.accountEmail || summary.to || '',
+      from: summary.from || '',
+      to: summary.to || '',
+      cc: summary.cc || '',
+      bcc: summary.bcc || '',
+      subject: summary.subject || '',
+      snippet: summary.snippet || '',
+      text: finalBody.text || summary.snippet || '',
+      html: finalBody.html || `<div style="font-family:sans-serif;line-height:1.6;color:#333"><p>${(finalBody.text || summary.snippet || '').replace(/\n/g, '<br>')}</p></div>`,
+      date: summary.date || Date.now(),
+      unread: Boolean(summary.unread),
+      starred: Boolean(summary.starred),
+      labels: summary.labels || ['INBOX'],
+      attachments: finalBody.attachments || []
+    }]
   };
 }
 
@@ -271,6 +328,7 @@ export async function messageAction(accountId, messageId, action) {
   }
 
   await request(`mailroom/messages/${messageId}`, 'PATCH', updates);
+  invalidateMessageCache();
   return { ok: true };
 }
 
@@ -302,6 +360,7 @@ export async function saveDraftMessage(accountId, payload) {
   };
 
   await request(`mailroom/messages/${id}`, 'PUT', message);
+  invalidateMessageCache();
   return { id };
 }
 
@@ -342,6 +401,7 @@ export async function sendEmailMessage(accountId, payload) {
 
   await request(`mailroom/messages/${id}`, 'PUT', message);
   await logAudit('mail.sent', accountId);
+  invalidateMessageCache();
   return { sent: true, id };
 }
 
@@ -370,5 +430,6 @@ export async function getAudit() {
 
 export async function triggerSyncRequest() {
   await request('mailroom/syncTrigger', 'PUT', { requestedAt: Date.now() });
+  invalidateMessageCache();
   return { requested: true };
 }
