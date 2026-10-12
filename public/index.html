@@ -90,7 +90,10 @@
     </div>
 
     <aside id="sidebar" class="sidebar">
-      <a class="brand" href="/" aria-label="Firemail AI home"><span class="brand-mark" data-icon="mail"></span><span>firemail<span class="brand-dot">ai.</span></span></a>
+      <div class="sidebar-header">
+        <a class="brand" href="/" aria-label="Firemail AI home"><span class="brand-mark" data-icon="mail"></span><span>firemail<span class="brand-dot">ai.</span></span></a>
+        <button id="sidebar-close-btn" class="sidebar-close-btn mobile-only" type="button" aria-label="Close navigation"><span data-icon="x"></span></button>
+      </div>
       <button class="compose-button" id="compose-button"><span data-icon="plus"></span> Compose <kbd>C</kbd></button>
       
       <!-- Plan Tier Widget -->
@@ -145,7 +148,7 @@
           </div>
         </div>
         <form class="searchbar" id="search-form"><span data-icon="search"></span><input id="search" type="search" autocomplete="off" placeholder="Search mail — try from:someone or has:attachment" aria-label="Search Gmail"><span class="search-key">/</span><button class="button small secondary" type="submit">Search</button></form>
-        <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
+        <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button><button id="select-mode-toggle" class="filter-pill select-pill" type="button"><span data-icon="check"></span> <span id="select-mode-label">Select</span></button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
 
         <!-- Cool Live Resync Progress Bar & Timer Widget -->
         <div id="sync-widget" class="sync-widget" role="region" aria-label="Inbox Resync Status">
@@ -172,6 +175,18 @@
           <div class="sync-widget-footer">
             <span id="sync-stage-text" class="sync-stage-text">All accounts synchronized</span>
             <span id="sync-last-timestamp" class="sync-last-timestamp">Updated just now</span>
+          </div>
+        </div>
+
+        <!-- Floating Multi-Email Bulk Share Action Bar -->
+        <div id="bulk-share-bar" class="bulk-share-bar" hidden>
+          <div class="bulk-share-left">
+            <span class="bulk-share-badge" data-icon="check"></span>
+            <span id="bulk-selected-count" class="bulk-selected-count">0 emails selected</span>
+          </div>
+          <div class="bulk-share-actions">
+            <button id="bulk-share-btn" class="button primary small" type="button"><span data-icon="share"></span> Share via Passcode</button>
+            <button id="bulk-clear-btn" class="button subtle small" type="button">Cancel</button>
           </div>
         </div>
 
@@ -267,28 +282,79 @@
   </dialog>
 
   <!-- Share Inbox Dialog -->
-  <dialog id="share-dialog" class="small-dialog">
+  <dialog id="share-dialog" class="small-dialog share-modal">
     <form id="share-form">
-      <div class="dialog-header"><h2>Share Inbox via Passcode</h2><button type="button" class="icon-button" data-close="share-dialog" data-icon="x" aria-label="Close share form"></button></div>
-      <label for="share-account-select">Select Account to Share</label>
+      <div class="dialog-header">
+        <div>
+          <span class="eyebrow">GRANULAR SHARING</span>
+          <h2>Share via Passcode</h2>
+        </div>
+        <button type="button" class="icon-button" data-close="share-dialog" data-icon="x" aria-label="Close share form"></button>
+      </div>
+      
+      <label for="share-account-select">Select Account</label>
       <select id="share-account-select" required></select>
 
-      <label for="share-label">Recipient Label / Name</label>
-      <input id="share-label" maxlength="60" required placeholder="e.g. Assistant, Client, Partner">
+      <label class="scope-heading-label">What would you like to share?</label>
+      <div class="share-scope-tabs">
+        <label class="scope-tab">
+          <input type="radio" name="share-scope" value="all" checked>
+          <div class="scope-card">
+            <span class="scope-card-icon" data-icon="inbox"></span>
+            <strong>Full Inbox</strong>
+            <small>All incoming emails</small>
+          </div>
+        </label>
+        <label class="scope-tab">
+          <input type="radio" name="share-scope" value="sender">
+          <div class="scope-card">
+            <span class="scope-card-icon" data-icon="mail"></span>
+            <strong>Specific Sender</strong>
+            <small>Filter by sender email</small>
+          </div>
+        </label>
+        <label class="scope-tab">
+          <input type="radio" name="share-scope" value="selected">
+          <div class="scope-card">
+            <span class="scope-card-icon" data-icon="check"></span>
+            <strong>Selected Emails</strong>
+            <small id="scope-selected-hint">0 selected</small>
+          </div>
+        </label>
+      </div>
+
+      <!-- Specific Sender Filter Field -->
+      <div id="share-sender-field" class="share-filter-box" hidden>
+        <label for="share-sender-input">Filter by Sender Email / Address</label>
+        <input id="share-sender-input" type="text" placeholder="e.g. client@example.com or @stripe.com">
+        <p class="field-hint">The guest passcode will <strong>ONLY</strong> display incoming emails received from this sender/address.</p>
+      </div>
+
+      <!-- Selected Emails Info Box -->
+      <div id="share-selected-field" class="share-filter-box" hidden>
+        <div class="selected-emails-banner">
+          <span data-icon="check"></span>
+          <span id="share-selected-desc">0 specific emails selected from your inbox</span>
+        </div>
+        <p class="field-hint">The guest passcode will <strong>ONLY</strong> grant access to the selected conversations.</p>
+      </div>
+
+      <label for="share-label">Recipient Name / Label</label>
+      <input id="share-label" maxlength="60" required placeholder="e.g. Assistant, Client, Accountant">
 
       <label for="share-passcode">Guest Passcode</label>
       <div class="password-field">
-        <input id="share-passcode" type="password" minlength="4" maxlength="128" required placeholder="Passcode for the guest to enter">
+        <input id="share-passcode" type="password" minlength="4" maxlength="128" required placeholder="Passcode for the recipient to enter">
         <button type="button" class="icon-button" id="toggle-share-pwd" aria-label="Show passcode" data-icon="eye"></button>
       </div>
 
       <div class="settings-note">
         <span data-icon="shield"></span>
-        <p><strong>Restricted Access:</strong> The recipient can only access this specific inbox and compose emails. They cannot access other accounts or any settings.</p>
+        <p><strong>Restricted Guest Access:</strong> The recipient can only view the shared emails and compose from this account. Settings and credentials remain strictly locked.</p>
       </div>
 
       <div id="share-notice" class="notice" hidden></div>
-      <button type="submit" class="button primary wide">Create Shared Access Passcode</button>
+      <button type="submit" class="button primary wide" id="share-submit-btn">Create Shared Passcode</button>
     </form>
   </dialog>
 

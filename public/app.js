@@ -65,9 +65,27 @@ const state = {
   shareInfo: null,
   workspaceId: 'master',
   currentPlan: 'free',
-  shares: []
+  shares: [],
+  selectedMessages: new Set(),
+  selectMode: false
 };
 let revealTimer;
+
+function updateBulkShareBar() {
+  const bar = $('bulk-share-bar');
+  if (!bar) return;
+  const count = state.selectedMessages.size;
+  bar.hidden = count === 0 || state.isGuest;
+  if ($('bulk-selected-count')) {
+    $('bulk-selected-count').textContent = `${count} email${count === 1 ? '' : 's'} selected`;
+  }
+  if ($('scope-selected-hint')) {
+    $('scope-selected-hint').textContent = `${count} selected`;
+  }
+  if ($('share-selected-desc')) {
+    $('share-selected-desc').textContent = `${count} specific email${count === 1 ? '' : 's'} selected from your inbox`;
+  }
+}
 
 function notice(id, message = '', success = false) { $(id).hidden = !message; $(id).textContent = message; $(id).classList.toggle('success', success); }
 function toast(message, error = false) { const item = document.createElement('div'); item.className = `toast${error ? ' error' : ''}`; item.innerHTML = icon(error ? 'alert' : 'check') + `<span>${esc(message)}</span>`; $('toast-container').appendChild(item); setTimeout(() => item.remove(), error ? 8500 : 4200); }
@@ -147,12 +165,34 @@ async function api(path, { method = 'GET', body } = {}) {
     const account = state.isGuest ? state.shareInfo.accountId : (url.searchParams.get('account') || 'all');
     const q = url.searchParams.get('q') || '';
     const force = url.searchParams.get('force') === '1';
-    return getMessages({ folder, account, q, forceRefresh: force });
+    const res = await getMessages({ folder, account, q, forceRefresh: force });
+    if (state.isGuest && state.shareInfo && res && Array.isArray(res.messages)) {
+      if (state.shareInfo.shareType === 'sender' && state.shareInfo.filterSender) {
+        const needle = state.shareInfo.filterSender.trim().toLowerCase();
+        res.messages = res.messages.filter(m => (m.from || '').toLowerCase().includes(needle));
+      } else if (state.shareInfo.shareType === 'selected' && Array.isArray(state.shareInfo.selectedMessageIds)) {
+        const allowed = new Set(state.shareInfo.selectedMessageIds);
+        res.messages = res.messages.filter(m => allowed.has(m.id) || allowed.has(m.threadId));
+      }
+    }
+    return res;
   }
 
   const threadMatch = path.match(/^\/api\/accounts\/([^/]+)\/threads\/([^/]+)$/);
   if (threadMatch) {
-    return getThread(threadMatch[1], threadMatch[2]);
+    const thread = await getThread(threadMatch[1], threadMatch[2]);
+    if (state.isGuest && state.shareInfo) {
+      if (state.shareInfo.shareType === 'sender' && state.shareInfo.filterSender) {
+        const needle = state.shareInfo.filterSender.trim().toLowerCase();
+        const hasSender = thread?.messages?.some(m => (m.from || '').toLowerCase().includes(needle));
+        if (!hasSender) throw new Error('You do not have permission to view this conversation.');
+      } else if (state.shareInfo.shareType === 'selected' && Array.isArray(state.shareInfo.selectedMessageIds)) {
+        const allowed = new Set(state.shareInfo.selectedMessageIds);
+        const isAllowed = allowed.has(threadMatch[2]) || thread?.messages?.some(m => allowed.has(m.id) || allowed.has(m.threadId));
+        if (!isAllowed) throw new Error('You do not have permission to view this conversation.');
+      }
+    }
+    return thread;
   }
 
   const actionMatch = path.match(/^\/api\/accounts\/([^/]+)\/messages\/([^/]+)\/action$/);
@@ -242,6 +282,17 @@ async function enterWorkspace(session) {
     state.account = session.accountId;
     state.folder = 'INBOX';
     $('guest-banner').hidden = false;
+    let desc = 'You have read & compose access to this inbox only.';
+    if (session.shareType === 'sender' && session.filterSender) {
+      desc = `Filtered View: Only incoming emails from "${esc(session.filterSender)}" are visible.`;
+    } else if (session.shareType === 'selected') {
+      const c = session.selectedMessageIds ? session.selectedMessageIds.length : 0;
+      desc = `Specific View: ${c} selected email${c === 1 ? '' : 's'} shared with you.`;
+    }
+    $('guest-banner').innerHTML = `<span data-icon="shield"></span><span><strong>Shared Access (${esc(session.label || 'Guest')})</strong> · ${desc}</span><button id="guest-exit" class="button small secondary" type="button">Exit</button>`;
+    $('guest-exit')?.addEventListener('click', () => lockDashboard('Exited shared workspace.'));
+    if ($('select-mode-toggle')) $('select-mode-toggle').hidden = true;
+    if ($('bulk-share-bar')) $('bulk-share-bar').hidden = true;
     if ($('plan-widget')) $('plan-widget').hidden = true;
     if ($('topbar-plans-btn')) $('topbar-plans-btn').hidden = true;
     if ($('settings-button')) $('settings-button').hidden = true;
@@ -269,6 +320,7 @@ async function enterWorkspace(session) {
     state.workspaceId = session.workspaceId || 'master';
     state.currentPlan = session.plan || 'free';
     $('guest-banner').hidden = true;
+    if ($('select-mode-toggle')) $('select-mode-toggle').hidden = false;
     if ($('plan-widget')) $('plan-widget').hidden = false;
     if ($('topbar-plans-btn')) $('topbar-plans-btn').hidden = false;
     if ($('settings-button')) $('settings-button').hidden = false;
@@ -361,12 +413,39 @@ async function loadMessages(append = false, force = false) {
   } finally { if (version === state.listVersion) { state.loading = false; $('refresh-button').disabled = false; $('load-more').disabled = false; } }
 }
 function renderMessages() {
-  $('message-count').textContent = `${state.messages.length} loaded`; $('load-more').hidden = !state.cursor;
+  $('message-count').textContent = `${state.messages.length} loaded`;
+  $('load-more').hidden = !state.cursor;
+  updateBulkShareBar();
   if (!state.messages.length) {
     const first = !connectedAccounts().length;
-    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : ''}</div>`; return;
+    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : ''}</div>`;
+    return;
   }
-  $('message-list').innerHTML = state.messages.map((m, index) => `<article class="message-row ${m.unread ? 'unread' : ''} ${state.activeId === `${m.accountId}:${m.id}` ? 'active' : ''}"><button class="row-open" data-open="${index}" aria-label="${esc(`Open ${m.subject} from ${person(m.from)}`)}"></button><div class="sender-avatar" style="background:${color(m.from)}">${esc(initials(m.from))}</div><div class="message-main"><div class="message-main-top"><span class="sender-name">${esc(person(m.from))}</span><span class="account-tag">${esc(accountLabel(m.accountId))}</span><span class="message-date">${esc(stamp(m.date))}</span></div><div class="message-summary-line">${m.draftId ? '<span class="draft-chip">Draft</span> ' : ''}<span class="message-subject">${esc(m.subject)}</span><span class="message-preview">${esc(m.snippet)}</span></div></div><button class="icon-button star-button ${m.starred ? 'starred' : ''}" data-star="${index}" aria-label="${m.starred ? 'Unstar' : 'Star'} message" aria-pressed="${m.starred}">${icon('star')}</button></article>`).join('');
+  const showSelect = !state.isGuest;
+  $('message-list').innerHTML = state.messages.map((m, index) => {
+    const isSelected = state.selectedMessages.has(m.id);
+    return `<article class="message-row ${m.unread ? 'unread' : ''} ${state.activeId === `${m.accountId}:${m.id}` ? 'active' : ''} ${isSelected ? 'row-selected' : ''}" data-row-idx="${index}">
+      ${showSelect ? `<button class="row-select-btn ${isSelected ? 'selected' : ''}" data-select-idx="${index}" type="button" aria-label="${isSelected ? 'Deselect message' : 'Select message'}"><span class="select-checkbox">${icon(isSelected ? 'check' : 'circle')}</span></button>` : ''}
+      <button class="row-open" data-open="${index}" aria-label="${esc(`Open ${m.subject} from ${person(m.from)}`)}"></button>
+      <div class="sender-avatar" style="background:${color(m.from)}">${esc(initials(m.from))}</div>
+      <div class="message-main">
+        <div class="message-main-top">
+          <div class="sender-wrap">
+            ${m.unread ? '<span class="unread-dot"></span>' : ''}
+            <span class="sender-name">${esc(person(m.from))}</span>
+          </div>
+          <span class="account-tag">${esc(accountLabel(m.accountId))}</span>
+          <span class="message-date">${esc(stamp(m.date))}</span>
+        </div>
+        <div class="message-summary-line">
+          ${m.draftId ? '<span class="draft-chip">Draft</span> ' : ''}
+          <span class="message-subject">${esc(m.subject)}</span>
+          <span class="message-preview">${esc(m.snippet)}</span>
+        </div>
+      </div>
+      <button class="icon-button star-button ${m.starred ? 'starred' : ''}" data-star="${index}" aria-label="${m.starred ? 'Unstar' : 'Star'} message" aria-pressed="${m.starred}">${icon('star')}</button>
+    </article>`;
+  }).join('');
 }
 function closeReader() { state.readerVersion++; state.reader = null; state.activeId = null; $('reader').hidden = true; $('reader').replaceChildren(); $('message-layout').classList.remove('has-reader'); }
 async function openThread(message) {
@@ -491,18 +570,29 @@ async function renderSettingsShares() {
       container.innerHTML = '<p class="sidebar-empty">No inboxes are shared yet.<br>Click "Share inbox" to give restricted access to anyone via passcode.</p>';
       return;
     }
-    container.innerHTML = state.shares.map(s => `
-      <div class="saved-account">
-        <div class="sender-avatar" style="background:#b8d3dd">${icon('share')}</div>
-        <div class="saved-account-main">
-          <strong>${esc(s.label)} <span class="account-status connected">PASSCODE ACTIVE</span></strong>
-          <small>Account: ${esc(s.accountEmail)} · Created ${esc(stamp(s.createdAt))}</small>
+    container.innerHTML = state.shares.map(s => {
+      const scopeBadge = s.shareType === 'sender'
+        ? `<span class="scope-chip sender-chip">${icon('mail')} Sender: <strong>${esc(s.filterSender)}</strong></span>`
+        : s.shareType === 'selected'
+        ? `<span class="scope-chip selected-chip">${icon('check')} <strong>${s.selectedMessageIds ? s.selectedMessageIds.length : 0} Selected Emails</strong></span>`
+        : `<span class="scope-chip all-chip">${icon('inbox')} Full Inbox</span>`;
+      return `
+        <div class="saved-account share-account-card">
+          <div class="sender-avatar" style="background:#b8d3dd">${icon('share')}</div>
+          <div class="saved-account-main">
+            <div class="share-main-top">
+              <strong>${esc(s.label)}</strong>
+              <span class="account-status connected">PASSCODE ACTIVE</span>
+            </div>
+            <div class="share-scope-badge-wrap">${scopeBadge}</div>
+            <small>Account: ${esc(s.accountEmail)} · Created ${esc(stamp(s.createdAt))}</small>
+          </div>
+          <div class="saved-account-actions">
+            <button class="icon-button" data-remove-share="${esc(s.id)}" aria-label="Revoke share access">${icon('trash')}</button>
+          </div>
         </div>
-        <div class="saved-account-actions">
-          <button class="icon-button" data-remove-share="${esc(s.id)}" aria-label="Revoke share access">${icon('trash')}</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch (err) {
     container.innerHTML = `<p class="field-hint error">${esc(err.message)}</p>`;
   }
@@ -835,7 +925,19 @@ $('signout').addEventListener('click', () => {
 });
 
 // Shared Inboxes Management
-function openShareDialog() {
+function updateShareScopeUI() {
+  const scope = document.querySelector('input[name="share-scope"]:checked')?.value || 'all';
+  if ($('share-sender-field')) $('share-sender-field').hidden = scope !== 'sender';
+  if ($('share-selected-field')) $('share-selected-field').hidden = scope !== 'selected';
+  const selCount = state.selectedMessages.size;
+  if ($('scope-selected-hint')) $('scope-selected-hint').textContent = `${selCount} selected`;
+  if ($('share-selected-desc')) $('share-selected-desc').textContent = `${selCount} specific email${selCount === 1 ? '' : 's'} selected from inbox`;
+  if (scope === 'sender' && $('share-sender-input')) {
+    setTimeout(() => $('share-sender-input').focus(), 50);
+  }
+}
+
+function openShareDialog(initialScope = 'all') {
   if (state.isGuest) return;
   const accounts = state.accounts;
   if (!accounts.length) {
@@ -845,12 +947,21 @@ function openShareDialog() {
   $('share-account-select').innerHTML = accounts.map(a => `<option value="${esc(a.id)}">${esc(a.label || a.email)} (${esc(a.email)})</option>`).join('');
   $('share-form').reset();
   $('share-passcode').type = 'password';
+
+  const targetScope = (initialScope === 'selected' || (initialScope === 'all' && state.selectedMessages.size > 0)) ? 'selected' : (initialScope === 'sender' ? 'sender' : 'all');
+  const radio = document.querySelector(`input[name="share-scope"][value="${targetScope}"]`);
+  if (radio) radio.checked = true;
+
+  updateShareScopeUI();
   notice('share-notice');
   $('share-dialog').showModal();
 }
-$('share-inbox-btn').addEventListener('click', openShareDialog);
-$('share-inbox-header-btn').addEventListener('click', openShareDialog);
-$('add-share').addEventListener('click', openShareDialog);
+$('share-inbox-btn').addEventListener('click', () => openShareDialog());
+$('share-inbox-header-btn').addEventListener('click', () => openShareDialog());
+$('add-share').addEventListener('click', () => openShareDialog());
+document.querySelectorAll('input[name="share-scope"]').forEach(r => {
+  r.addEventListener('change', updateShareScopeUI);
+});
 $('toggle-share-pwd').addEventListener('click', () => {
   $('share-passcode').type = $('share-passcode').type === 'password' ? 'text' : 'password';
 });
@@ -860,17 +971,30 @@ $('share-form').addEventListener('submit', async event => {
   const accountId = $('share-account-select').value;
   const label = $('share-label').value.trim();
   const passcode = $('share-passcode').value;
+  const shareType = document.querySelector('input[name="share-scope"]:checked')?.value || 'all';
+  const filterSender = $('share-sender-input') ? $('share-sender-input').value.trim() : '';
+  const selectedMessageIds = Array.from(state.selectedMessages);
+
+  if (shareType === 'sender' && !filterSender) {
+    notice('share-notice', 'Please enter a sender email address or domain to filter by.', false);
+    return;
+  }
+  if (shareType === 'selected' && (!selectedMessageIds || !selectedMessageIds.length)) {
+    notice('share-notice', 'Please select at least one email in your inbox using the checkboxes.', false);
+    return;
+  }
 
   const btn = event.submitter;
   btn.disabled = true;
   try {
     await api('/api/shares', {
       method: 'POST',
-      body: { accountId, label, passcode }
+      body: { accountId, label, passcode, shareType, filterSender, selectedMessageIds }
     });
     $('share-dialog').close();
     $('share-form').reset();
-    toast('Shared inbox passcode created! The recipient can enter it at the Gate screen.');
+    const typeLabel = shareType === 'sender' ? `Filtered by "${filterSender}"` : shareType === 'selected' ? `${selectedMessageIds.length} selected emails` : 'Full inbox';
+    toast(`Shared access passcode created! (${typeLabel})`);
     if (state.settings) renderSettingsShares();
   } catch (err) {
     report(err, 'share-notice');
@@ -927,6 +1051,7 @@ function toggleSidebar(open) {
   if ($('sidebar-backdrop')) $('sidebar-backdrop').hidden = !isOpen;
 }
 $('menu-toggle').addEventListener('click', () => toggleSidebar());
+if ($('sidebar-close-btn')) $('sidebar-close-btn').addEventListener('click', () => toggleSidebar(false));
 if ($('sidebar-backdrop')) $('sidebar-backdrop').addEventListener('click', () => toggleSidebar(false));
 document.addEventListener('click', event => { if ($('sidebar').classList.contains('open') && !event.target.closest('#sidebar, #menu-toggle')) toggleSidebar(false); });
 for (const id of ['connect-sidebar', 'connect-main']) $(id).addEventListener('click', () => beginConnect());
@@ -1174,9 +1299,61 @@ $('sync-now-btn').addEventListener('click', () => executeResync('manual'));
 $('topbar-sync-btn').addEventListener('click', () => executeResync('manual'));
 
 $('load-more').addEventListener('click', () => loadMessages(true));
+if ($('select-mode-toggle')) {
+  $('select-mode-toggle').addEventListener('click', () => {
+    state.selectMode = !state.selectMode;
+    $('select-mode-toggle').classList.toggle('active', state.selectMode);
+    if ($('select-mode-label')) $('select-mode-label').textContent = state.selectMode ? 'Done' : 'Select';
+    $('message-list').classList.toggle('select-mode-active', state.selectMode);
+  });
+}
+if ($('bulk-clear-btn')) {
+  $('bulk-clear-btn').addEventListener('click', () => {
+    state.selectedMessages.clear();
+    state.selectMode = false;
+    if ($('select-mode-toggle')) {
+      $('select-mode-toggle').classList.remove('active');
+      if ($('select-mode-label')) $('select-mode-label').textContent = 'Select';
+    }
+    $('message-list').classList.remove('select-mode-active');
+    updateBulkShareBar();
+    renderMessages();
+  });
+}
+if ($('bulk-share-btn')) {
+  $('bulk-share-btn').addEventListener('click', () => {
+    openShareDialog('selected');
+  });
+}
 $('message-list').addEventListener('click', async event => {
+  const selectBtn = event.target.closest('[data-select-idx]');
+  if (selectBtn) {
+    const idx = Number(selectBtn.dataset.selectIdx);
+    const m = state.messages[idx];
+    if (m) {
+      if (state.selectedMessages.has(m.id)) state.selectedMessages.delete(m.id);
+      else state.selectedMessages.add(m.id);
+      updateBulkShareBar();
+      renderMessages();
+    }
+    return;
+  }
   const open = event.target.closest('[data-open]');
-  if (open) openThread(state.messages[Number(open.dataset.open)]);
+  if (open) {
+    const idx = Number(open.dataset.open);
+    if (state.selectMode) {
+      const m = state.messages[idx];
+      if (m) {
+        if (state.selectedMessages.has(m.id)) state.selectedMessages.delete(m.id);
+        else state.selectedMessages.add(m.id);
+        updateBulkShareBar();
+        renderMessages();
+      }
+      return;
+    }
+    openThread(state.messages[idx]);
+    return;
+  }
   const star = event.target.closest('[data-star]');
   if (star) {
     star.disabled = true;

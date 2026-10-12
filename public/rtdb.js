@@ -194,6 +194,9 @@ export async function verifyPasscode(passcode) {
             accountId: share.accountId,
             accountEmail: share.accountEmail,
             label: share.label || 'Shared Inbox',
+            shareType: share.shareType || 'all',
+            filterSender: share.filterSender || '',
+            selectedMessageIds: Array.isArray(share.selectedMessageIds) ? share.selectedMessageIds : [],
             permissions: share.permissions || { canRead: true, canCompose: true },
             expiresAt: Date.now() + 60 * 60000
           };
@@ -259,17 +262,35 @@ export async function getSharedInboxes() {
     accountEmail: s.accountEmail,
     label: s.label || 'Shared View',
     createdAt: s.createdAt,
+    shareType: s.shareType || 'all',
+    filterSender: s.filterSender || '',
+    selectedMessageIds: Array.isArray(s.selectedMessageIds) ? s.selectedMessageIds : [],
     permissions: s.permissions || { canRead: true, canCompose: true }
   }));
 }
 
-export async function createSharedInbox({ accountId, label, passcode, permissions = { canRead: true, canCompose: true } }) {
+export async function createSharedInbox({
+  accountId,
+  label,
+  passcode,
+  shareType = 'all',
+  filterSender = '',
+  selectedMessageIds = [],
+  permissions = { canRead: true, canCompose: true }
+}) {
   if (!passcode || passcode.length < 4) {
     throw new Error('Share passcode must be at least 4 characters.');
   }
   const accounts = await getAccounts();
   const acc = accounts.find(a => a.id === accountId);
   if (!acc) throw new Error('Account not found to share.');
+
+  if (shareType === 'sender' && !filterSender.trim()) {
+    throw new Error('Please enter a sender email address or domain to filter by.');
+  }
+  if (shareType === 'selected' && (!selectedMessageIds || !selectedMessageIds.length)) {
+    throw new Error('Please select at least one email to share.');
+  }
 
   const shareId = 'share_' + Math.random().toString(36).slice(2, 10);
   const salt = generateSalt();
@@ -282,12 +303,15 @@ export async function createSharedInbox({ accountId, label, passcode, permission
     label: (label || `Share: ${acc.label}`).trim(),
     salt,
     hash,
+    shareType,
+    filterSender: filterSender.trim().toLowerCase(),
+    selectedMessageIds: Array.isArray(selectedMessageIds) ? selectedMessageIds : [],
     permissions,
     createdAt: Date.now()
   };
 
   await request(`mailroom/shares/${shareId}`, 'PUT', payload);
-  await logAudit('share.created', shareId);
+  await logAudit('share.created', `${shareId} (${shareType})`);
   return payload;
 }
 
