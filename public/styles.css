@@ -46,3 +46,43 @@
 .profile-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .password-account-header{font-size:12px;font-weight:600;color:var(--green);margin:0 0 14px}
 .password-field .button.small{position:absolute;right:40px;top:5px;min-height:34px;padding:0 10px}
+
+/* Live Resync Progress Bar & Timer Widget Styles */
+.sync-widget{background:linear-gradient(135deg,#ffffff 0%,#f7faf3 100%);border:1px solid #dbe6d2;border-radius:12px;padding:14px 18px;margin-bottom:18px;box-shadow:0 3px 12px #1032220a;position:relative;transition:all .2s ease}
+.sync-widget:hover{box-shadow:0 6px 20px #10322212;border-color:#cbdbbe}
+.sync-widget-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.sync-widget-status{display:flex;align-items:center;gap:10px}
+.sync-status-indicator{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0}
+.sync-status-indicator.idle{background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.7);animation:pulse-idle 2.2s infinite}
+.sync-status-indicator.syncing{background:#06b6d4;box-shadow:0 0 0 0 rgba(6,182,212,.8);animation:pulse-active 1.1s infinite}
+@keyframes pulse-idle{0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}70%{box-shadow:0 0 0 7px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
+@keyframes pulse-active{0%{box-shadow:0 0 0 0 rgba(6,182,212,.8)}70%{box-shadow:0 0 0 9px rgba(6,182,212,0)}100%{box-shadow:0 0 0 0 rgba(6,182,212,0)}}
+.sync-widget-title-wrap{display:flex;flex-direction:column}
+.sync-widget-title{font-size:12px;font-weight:700;color:var(--ink);letter-spacing:-.1px}
+.sync-widget-subtitle{font-size:10px;color:var(--muted)}
+.sync-widget-meta{display:flex;align-items:center;gap:10px}
+.sync-now-btn{display:inline-flex;align-items:center;gap:6px;background:#eef4e6;border:1px solid #d3e2c6;color:var(--green);font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .18s ease}
+.sync-now-btn:hover{background:#e2eed7;border-color:#bdd2ad;transform:translateY(-1px);color:#193f31}
+.sync-now-btn:active{transform:translateY(0)}
+.sync-now-btn.syncing{background:#e0f7fa;border-color:#80deea;color:#00695c}
+.sync-btn-icon{width:13px;height:13px;display:inline-block;transition:transform .3s}
+.sync-btn-icon.spinning{animation:spin-fast .75s linear infinite}
+@keyframes spin-fast{100%{transform:rotate(360deg)}}
+.sync-progress-percentage{font-size:12px;font-weight:750;color:#1d382b;min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+.sync-progress-track{width:100%;height:8px;background:#e6eee0;border-radius:999px;position:relative;overflow:hidden;box-shadow:inset 0 1px 2px #0a201414}
+.sync-progress-bar{height:100%;border-radius:999px;transition:width .35s cubic-bezier(.2,.8,.2,1);position:relative}
+.sync-progress-bar.idle{background:linear-gradient(90deg,#55a86d 0%,#77bb85 100%);box-shadow:0 0 8px rgba(85,168,109,.4)}
+.sync-progress-bar.syncing{background:linear-gradient(90deg,#10b981 0%,#06b6d4 50%,#3b82f6 100%);background-size:200% 100%;box-shadow:0 0 14px rgba(6,182,212,.7);animation:sync-shimmer 1.8s linear infinite}
+@keyframes sync-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.sync-widget-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:10px;color:#70806c}
+.sync-stage-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.sync-last-timestamp{flex-shrink:0;color:#889984}
+
+/* Topbar Sync Pill */
+.topbar-sync-pill{display:inline-flex;align-items:center;gap:6px;background:#f0f5ea;border:1px solid #d5e4cb;color:var(--green);font-size:10px;font-weight:650;padding:5px 11px;border-radius:20px;cursor:pointer;transition:all .18s ease}
+.topbar-sync-pill:hover{background:#e3eed8;border-color:#b9d2a9}
+.topbar-sync-dot{width:6px;height:6px;border-radius:50%;background:#10b981}
+.topbar-sync-pill.syncing .topbar-sync-dot{background:#06b6d4;animation:pulse-active 1s infinite}
+.topbar-sync-icon{width:11px;height:11px;color:currentColor}
+.topbar-sync-pill.syncing .topbar-sync-icon{animation:spin-fast .75s linear infinite}
+

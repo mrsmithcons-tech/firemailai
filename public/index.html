@@ -122,6 +122,11 @@
         <div class="topbar-left"><button id="menu-toggle" class="icon-button mobile-only" data-icon="menu" aria-label="Open navigation"></button><span class="topbar-label">Your workspace</span><span class="topbar-slash">/</span><span id="breadcrumb">All accounts</span></div>
         <div class="topbar-right">
           <button id="topbar-plans-btn" class="plan-pill"><span data-icon="zap"></span> <span id="topbar-plan-label">Free Plan</span></button>
+          <button id="topbar-sync-btn" class="topbar-sync-pill" type="button" title="Click to trigger instant resync">
+            <span class="topbar-sync-dot"></span>
+            <span data-icon="refresh" class="topbar-sync-icon"></span>
+            <span id="topbar-sync-timer">Sync: 30s</span>
+          </button>
           <span id="demo-badge" class="demo-badge" hidden>DEMO · SAMPLE MAIL</span>
           <span id="session-label" class="session-label">Unlocked</span>
           <button id="profile-button" class="profile-avatar" aria-label="Account and profile options">FY</button>
@@ -137,6 +142,35 @@
         </div>
         <form class="searchbar" id="search-form"><span data-icon="search"></span><input id="search" type="search" autocomplete="off" placeholder="Search mail — try from:someone or has:attachment" aria-label="Search Gmail"><span class="search-key">/</span><button class="button small secondary" type="submit">Search</button></form>
         <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
+
+        <!-- Cool Live Resync Progress Bar & Timer Widget -->
+        <div id="sync-widget" class="sync-widget" role="region" aria-label="Inbox Resync Status">
+          <div class="sync-widget-header">
+            <div class="sync-widget-status">
+              <span id="sync-status-indicator" class="sync-status-indicator idle"></span>
+              <div class="sync-widget-title-wrap">
+                <span class="sync-widget-title">Live Continuous Sync</span>
+                <span id="sync-widget-subtitle" class="sync-widget-subtitle">RTDB &amp; IMAP active · checks every 30s</span>
+              </div>
+            </div>
+            <div class="sync-widget-meta">
+              <button id="sync-now-btn" class="sync-now-btn" type="button" aria-label="Trigger instant sync">
+                <span data-icon="refresh" id="sync-btn-icon" class="sync-btn-icon"></span>
+                <span id="sync-countdown-label">Resync in 30s</span>
+              </button>
+              <span id="sync-progress-percentage" class="sync-progress-percentage">100%</span>
+            </div>
+          </div>
+          <div class="sync-progress-track">
+            <div id="sync-progress-bar" class="sync-progress-bar idle" style="width: 100%;"></div>
+            <div class="sync-progress-glow"></div>
+          </div>
+          <div class="sync-widget-footer">
+            <span id="sync-stage-text" class="sync-stage-text">All accounts synchronized</span>
+            <span id="sync-last-timestamp" class="sync-last-timestamp">Updated just now</span>
+          </div>
+        </div>
+
         <div class="message-layout" id="message-layout"><section class="message-list-wrap" aria-label="Messages"><div id="inbox-errors" class="inbox-errors" hidden></div><div id="message-list" class="message-list"></div><button id="load-more" class="button subtle load-more" hidden>Load more messages</button></section><section class="reader" id="reader" aria-label="Conversation" hidden></section></div>
         <footer class="mail-footer"><span><span data-icon="shield"></span> Synchronized via Firebase RTDB + Automated Cloud Sync</span><span id="sync-time">Ready when you are</span></footer>
       </section>
