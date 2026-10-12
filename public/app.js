@@ -25,6 +25,9 @@ import {
   getAudit,
   logAudit,
   triggerSyncRequest,
+  getOAuthConfig,
+  saveOAuthConfig,
+  saveOAuthAccount,
   PLANS
 } from './rtdb.js';
 
@@ -167,6 +170,13 @@ async function api(path, { method = 'GET', body } = {}) {
 
   if (path === '/api/audit') {
     return getAudit();
+  }
+
+  if (path === '/api/oauth/config' && method === 'GET') {
+    return getOAuthConfig();
+  }
+  if (path === '/api/oauth/config' && method === 'POST') {
+    return saveOAuthConfig(body);
   }
 
   throw new Error(`Route not supported: ${path}`);
@@ -455,8 +465,8 @@ function renderSettingsAccounts() {
         <div class="saved-account">
           <div class="sender-avatar" style="background:${color(a.email)}">${esc(initials(a.label || a.email))}</div>
           <div class="saved-account-main">
-            <strong>${esc(a.label || a.email.split('@')[0])} <span class="account-status connected">SAVED IN RTDB</span></strong>
-            <small>${esc(a.email)}${a.hasAppPassword ? ' · App Password saved' : ''}${a.hasGmailPassword ? ' · Gmail Password saved' : ''}</small>
+            <strong>${esc(a.label || a.email.split('@')[0])} <span class="account-status connected">${a.isOAuth || a.authType === 'oauth' ? 'GOOGLE OAUTH (1-CLICK)' : 'SAVED IN RTDB'}</span></strong>
+            <small>${esc(a.email)}${a.isOAuth || a.authType === 'oauth' ? ' · Connected via 1-Click Google OAuth' : (a.hasAppPassword ? ' · App Password saved' : '') + (a.hasGmailPassword ? ' · Gmail Password saved' : '')}</small>
           </div>
           <div class="saved-account-actions">
             ${(a.hasAppPassword || a.hasGmailPassword) ? `<button class="icon-button" data-reveal="${esc(a.id)}" aria-label="Reveal passwords for ${esc(a.email)}">${icon('eye')}</button>` : ''}
@@ -465,7 +475,7 @@ function renderSettingsAccounts() {
           </div>
         </div>
       `).join('')
-    : '<div class="empty-state"><div class="empty-icon">' + icon('mail') + '</div><h3>Your first Gmail account</h3><p>Save your Gmail address and passwords into Firebase RTDB.</p><button class="button primary" data-connect-first>Add Gmail account</button></div>';
+    : '<div class="empty-state"><div class="empty-icon">' + icon('mail') + '</div><h3>Your first Gmail account</h3><p>Save your Gmail address or connect with 1-Click Google OAuth.</p><button class="button primary" data-connect-first>Add Gmail account</button></div>';
 }
 
 async function renderSettingsShares() {
@@ -1182,11 +1192,153 @@ $('compose-form').addEventListener('submit', async event => {
   catch (err) { if (state.compose !== context) return; if (err.code === 'SEND_UNCERTAIN' || sendStarted && !err.status && !demo) { context.deliveryUncertain = true; $('send-button').disabled = true; notice('compose-notice', (err.code === 'SEND_UNCERTAIN' ? err.message : 'The connection was lost before delivery could be confirmed.') + ' Close this window and check Sent before creating another copy.'); } else { report(err, 'compose-notice'); if (err.status && err.status < 500) context.sendKey = crypto.randomUUID(); } }
   finally { if (state.compose === context) { composerBusy(false); if (context.deliveryUncertain) $('send-button').disabled = true; } }
 });
+// Google OAuth 2.0 PKCE & 1-Click Connection
+function generateCodeVerifier() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, dec => ('0' + dec.toString(16)).slice(-2)).join('');
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+async function initiateGoogleOAuth() {
+  if (state.isGuest) return;
+  const planKey = (state.currentPlan || 'free').toUpperCase();
+  const max = PLANS[planKey]?.maxAccounts || 5;
+  if (state.accounts.length >= max) {
+    toast(`Plan limit reached! Your ${PLANS[planKey]?.name || 'Free Plan'} allows up to ${max} accounts. Please upgrade.`, true);
+    openPlansDialog();
+    return;
+  }
+
+  try {
+    const config = await api('/api/oauth/config');
+    const clientId = config?.clientId || localStorage.getItem('firemail_oauth_client_id') || '';
+    const redirectUri = config?.redirectUri || (window.location.origin + '/api/oauth/callback');
+
+    if (!clientId) {
+      toast('Please configure your Google OAuth Client ID first.', true);
+      openOAuthConfigDialog();
+      return;
+    }
+
+    const verifier = generateCodeVerifier();
+    const challenge = await generateCodeChallenge(verifier);
+    sessionStorage.setItem('firemail_oauth_verifier', verifier);
+    localStorage.setItem('firemail_oauth_verifier', verifier);
+    sessionStorage.setItem('firemail_oauth_client_id', clientId);
+    state.oauthPending = true;
+
+    const scopes = [
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ].join(' ');
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: scopes,
+      access_type: 'offline',
+      prompt: 'consent',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      include_granted_scopes: 'true'
+    });
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    const popup = window.open(authUrl, 'firemail_google_oauth', 'width=560,height=680,menubar=no,toolbar=no');
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      window.location.href = authUrl;
+    }
+  } catch (err) {
+    report(err);
+  }
+}
+
+async function openOAuthConfigDialog() {
+  if (state.isGuest) return;
+  try {
+    const config = await api('/api/oauth/config');
+    $('oauth-client-id').value = config?.clientId || '';
+    $('oauth-client-secret').value = config?.clientSecret || '';
+    $('oauth-redirect-uri').textContent = config?.redirectUri || (window.location.origin + '/api/oauth/callback');
+    notice('oauth-notice');
+    $('oauth-config-dialog').showModal();
+  } catch (err) {
+    report(err);
+  }
+}
+
+async function handleOAuthConfigSubmit(event) {
+  event.preventDefault();
+  notice('oauth-notice');
+  const clientId = $('oauth-client-id').value.trim();
+  const clientSecret = $('oauth-client-secret').value.trim();
+
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    await api('/api/oauth/config', {
+      method: 'POST',
+      body: { clientId, clientSecret }
+    });
+    $('oauth-config-dialog').close();
+    toast('Google OAuth 2.0 configuration saved in RTDB.');
+  } catch (err) {
+    report(err, 'oauth-notice');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// OAuth Button Event Listeners
+if ($('google-oauth-btn')) $('google-oauth-btn').addEventListener('click', initiateGoogleOAuth);
+if ($('configure-oauth-btn')) $('configure-oauth-btn').addEventListener('click', () => {
+  $('account-dialog').close();
+  openOAuthConfigDialog();
+});
+if ($('oauth-settings-btn')) $('oauth-settings-btn').addEventListener('click', openOAuthConfigDialog);
+if ($('oauth-config-form')) $('oauth-config-form').addEventListener('submit', handleOAuthConfigSubmit);
+if ($('copy-redirect-uri-btn')) $('copy-redirect-uri-btn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('oauth-redirect-uri').textContent);
+    toast('Authorized redirect URI copied to clipboard.');
+  } catch {
+    toast('Clipboard access denied.', true);
+  }
+});
+
 window.addEventListener('message', async event => {
-  if (event.origin !== location.origin || event.data?.type !== 'mailroom:oauth' || !state.oauthPending) return;
+  if (event.origin !== location.origin || event.data?.type !== 'mailroom:oauth') return;
   state.oauthPending = false;
-  if (!event.data.ok) { toast('The Gmail connection did not complete. Check SETUP.md or try connecting again.', true); return; }
-  if (canUseWorkspace()) { try { await loadAccounts(); if (state.settings) await showSettings(); else await loadMessages(); toast('Gmail inbox connected.'); } catch (err) { report(err); } }
+  if ($('account-dialog').open) $('account-dialog').close();
+  if ($('oauth-config-dialog').open) $('oauth-config-dialog').close();
+  if (!event.data.ok) {
+    toast('Google OAuth connection was cancelled or incomplete.', true);
+    return;
+  }
+  if (canUseWorkspace()) {
+    try {
+      await loadAccounts();
+      if (state.settings) await showSettings();
+      else await loadMessages();
+      toast(`Google account connected via 1-Click OAuth! (${event.data.detail || ''})`);
+      executeResync('auto');
+    } catch (err) {
+      report(err);
+    }
+  }
 });
 for (const name of ['pointerdown', 'keydown', 'input', 'scroll']) document.addEventListener(name, () => { state.lastActivity = Date.now(); }, { capture: true, passive: true });
 setInterval(() => { if (!canUseWorkspace()) return; if (Date.now() >= state.expiresAt || Date.now() - state.lastActivity > 10 * 60000) lockDashboard('Your dashboard locked automatically. Enter your passcode to continue.'); else $('session-label').textContent = `Unlocked · ${Math.ceil((state.expiresAt - Date.now()) / 60000)}m`; }, 5000);

@@ -306,6 +306,8 @@ export async function getAccounts() {
     email: acc.email,
     label: acc.label || acc.email.split('@')[0],
     connected: true,
+    authType: acc.authType || (acc.accessToken ? 'oauth' : 'password'),
+    isOAuth: acc.authType === 'oauth' || Boolean(acc.accessToken),
     hasAppPassword: Boolean(acc.appPassword || acc.password),
     hasGmailPassword: Boolean(acc.gmailPassword),
     appPassword: acc.appPassword || acc.password || '',
@@ -649,3 +651,58 @@ export async function triggerSyncRequest() {
   invalidateMessageCache();
   return { requested: true };
 }
+
+// Google OAuth 2.0 Integration APIs
+export async function getOAuthConfig() {
+  try {
+    const config = await request('mailroom/config/oauth');
+    if (config?.clientId) return config;
+  } catch {}
+  return {
+    clientId: '',
+    clientSecret: '',
+    redirectUri: 'https://firemailai.web.app/api/oauth/callback'
+  };
+}
+
+export async function saveOAuthConfig({ clientId, clientSecret }) {
+  const payload = {
+    clientId: (clientId || '').trim(),
+    clientSecret: (clientSecret || '').trim(),
+    redirectUri: 'https://firemailai.web.app/api/oauth/callback',
+    updatedAt: Date.now()
+  };
+  await request('mailroom/config/oauth', 'PUT', payload);
+  await logAudit('oauth.config_updated');
+  return payload;
+}
+
+export async function saveOAuthAccount({ email, label, accessToken, refreshToken, expiresIn, currentPlan = 'free' }) {
+  if (!email || !email.includes('@')) throw new Error('Valid email address required.');
+  const accounts = await getAccounts();
+  const maxAllowed = PLANS[currentPlan.toUpperCase()]?.maxAccounts || 5;
+
+  const existing = accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+  if (!existing && accounts.length >= maxAllowed) {
+    throw new Error(`Plan limit reached! Your ${PLANS[currentPlan.toUpperCase()]?.name || 'Free Plan'} allows up to ${maxAllowed} accounts. Please upgrade your plan or contact admin at mrsmithcons@gmail.com.`);
+  }
+
+  const accountId = existing?.id || 'acc_oauth_' + Math.random().toString(36).slice(2, 10);
+  const payload = {
+    id: accountId,
+    email: email.trim().toLowerCase(),
+    label: (label || email.split('@')[0]).trim(),
+    authType: 'oauth',
+    accessToken,
+    refreshToken: refreshToken || existing?.refreshToken || '',
+    tokenExpiresAt: Date.now() + (Number(expiresIn) || 3600) * 1000,
+    connected: true,
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now()
+  };
+
+  await request(`mailroom/accounts/${accountId}`, 'PUT', payload);
+  await logAudit('oauth.connected', accountId);
+  return payload;
+}
+

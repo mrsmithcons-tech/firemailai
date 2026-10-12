@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connecting Google Account — Firemail AI</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    body {
+      margin: 0;
+      background: #fafbf7;
+      color: #1a382c;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .oauth-box {
+      background: white;
+      border: 1px solid #dce4d5;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(18, 50, 36, 0.08);
+      max-width: 420px;
+      width: 100%;
+      padding: 36px 30px;
+      text-align: center;
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid #e1ecdc;
+      border-top-color: #2e5948;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 24px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .success-icon {
+      width: 52px;
+      height: 52px;
+      background: #e9f5e4;
+      color: #3b7543;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      margin-bottom: 20px;
+    }
+    .error-icon {
+      width: 52px;
+      height: 52px;
+      background: #fdeee9;
+      color: #b53826;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      margin-bottom: 20px;
+    }
+    h2 { margin: 0 0 10px; font-size: 20px; font-weight: 650; }
+    p { margin: 0 0 20px; color: #627568; font-size: 13px; line-height: 1.6; }
+    .email-chip {
+      display: inline-block;
+      background: #edf4e8;
+      color: #1e4533;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .button {
+      display: inline-block;
+      background: #234d3d;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: 0;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="oauth-box">
+    <div id="loading-state">
+      <div class="spinner"></div>
+      <h2>Connecting your Gmail...</h2>
+      <p id="status-text">Exchanging authorization credentials with Google and securing your inbox access in RTDB.</p>
+    </div>
+
+    <div id="success-state" style="display:none;">
+      <div class="success-icon">✓</div>
+      <h2>Connected Successfully!</h2>
+      <div id="user-email-chip" class="email-chip"></div>
+      <p>Your Google account has been saved into your private Firemail AI dashboard.</p>
+      <button class="button" onclick="window.close(); window.location.href='/';">Return to Dashboard</button>
+    </div>
+
+    <div id="error-state" style="display:none;">
+      <div class="error-icon">✕</div>
+      <h2>Connection Error</h2>
+      <p id="error-text">Google authorization could not be completed.</p>
+      <button class="button" onclick="window.close(); window.location.href='/';">Close</button>
+    </div>
+  </div>
+
+  <script type="module">
+    const RTDB_URL = 'https://firemailai-default-rtdb.firebaseio.com';
+
+    async function handleCallback() {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      
+      const code = searchParams.get('code');
+      const directAccessToken = hashParams.get('access_token');
+      const error = searchParams.get('error') || hashParams.get('error');
+
+      if (error) {
+        showError(`Google Authorization Error: ${error} (${searchParams.get('error_description') || hashParams.get('error_description') || 'Cancelled'})`);
+        notifyOpener(false, error);
+        return;
+      }
+
+      if (!code && !directAccessToken) {
+        showError('No authorization credentials were returned by Google.');
+        notifyOpener(false, 'MISSING_CREDENTIALS');
+        return;
+      }
+
+      try {
+        updateStatus('Reading OAuth configuration...');
+        let config = {};
+        try {
+          const configRes = await fetch(`${RTDB_URL}/mailroom/config/oauth.json`);
+          config = (await configRes.json()) || {};
+        } catch {}
+
+        const clientId = config.clientId || localStorage.getItem('firemail_oauth_client_id') || '';
+        const clientSecret = config.clientSecret || localStorage.getItem('firemail_oauth_client_secret') || '';
+        const redirectUri = config.redirectUri || (window.location.origin + '/api/oauth/callback');
+
+        let tokens = null;
+
+        if (directAccessToken) {
+          tokens = {
+            access_token: directAccessToken,
+            refresh_token: hashParams.get('refresh_token') || '',
+            expires_in: Number(hashParams.get('expires_in')) || 3600
+          };
+        } else {
+          updateStatus('Exchanging token with Google...');
+          const verifier = sessionStorage.getItem('firemail_oauth_verifier') || localStorage.getItem('firemail_oauth_verifier');
+
+          const tokenParams = new URLSearchParams({
+            code,
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code'
+          });
+          if (verifier) tokenParams.append('code_verifier', verifier);
+          if (clientSecret) tokenParams.append('client_secret', clientSecret);
+
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: tokenParams
+          });
+
+          tokens = await tokenRes.json();
+          if (!tokenRes.ok || !tokens.access_token) {
+            throw new Error(tokens.error_description || tokens.error || 'Failed to exchange authorization code with Google');
+          }
+        }
+
+        updateStatus('Fetching Google user profile...');
+        let email = '';
+        let name = '';
+
+        try {
+          const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            email = profile.email;
+            name = profile.name || profile.given_name || email.split('@')[0];
+          }
+        } catch {}
+
+        if (!email) {
+          try {
+            const gmailProfileRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+              headers: { Authorization: `Bearer ${tokens.access_token}` }
+            });
+            if (gmailProfileRes.ok) {
+              const gmailProfile = await gmailProfileRes.json();
+              email = gmailProfile.emailAddress;
+              name = email.split('@')[0];
+            }
+          } catch {}
+        }
+
+        if (!email) throw new Error('Could not retrieve authorized Gmail address.');
+
+        updateStatus('Saving account to Firemail RTDB...');
+        let existingAccount = null;
+        try {
+          const accountsRes = await fetch(`${RTDB_URL}/mailroom/accounts.json`);
+          const existingData = await accountsRes.json();
+          if (existingData) {
+            existingAccount = Object.values(existingData).find(a => a.email && a.email.toLowerCase() === email.toLowerCase());
+          }
+        } catch {}
+
+        const accountId = existingAccount ? existingAccount.id : ('acc_oauth_' + Math.random().toString(36).slice(2, 10));
+        const accountPayload = {
+          id: accountId,
+          email: email.toLowerCase(),
+          label: (existingAccount?.label) || name || email.split('@')[0],
+          authType: 'oauth',
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || existingAccount?.refreshToken || '',
+          tokenExpiresAt: Date.now() + (Number(tokens.expires_in) || 3600) * 1000,
+          connected: true,
+          createdAt: existingAccount?.createdAt || Date.now(),
+          updatedAt: Date.now()
+        };
+
+        await fetch(`${RTDB_URL}/mailroom/accounts/${accountId}.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(accountPayload)
+        });
+
+        // Trigger on-demand sync request
+        try {
+          await fetch(`${RTDB_URL}/mailroom/syncTrigger.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requestedAt: Date.now() })
+          });
+        } catch {}
+
+        // Log audit event
+        const auditId = 'evt_' + Date.now();
+        await fetch(`${RTDB_URL}/mailroom/audit/${auditId}.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: auditId, action: 'oauth.connected', accountId, at: Date.now() })
+        });
+
+        showSuccess(email);
+        notifyOpener(true, email);
+      } catch (err) {
+        showError(err.message || 'Authorization failed.');
+        notifyOpener(false, err.message);
+      }
+    }
+
+    function updateStatus(text) {
+      document.getElementById('status-text').textContent = text;
+    }
+
+    function showSuccess(email) {
+      document.getElementById('loading-state').style.display = 'none';
+      document.getElementById('error-state').style.display = 'none';
+      document.getElementById('user-email-chip').textContent = email;
+      document.getElementById('success-state').style.display = 'block';
+      setTimeout(() => {
+        if (window.opener) window.close();
+        else window.location.href = '/?oauth=connected';
+      }, 1500);
+    }
+
+    function showError(msg) {
+      document.getElementById('loading-state').style.display = 'none';
+      document.getElementById('success-state').style.display = 'none';
+      document.getElementById('error-text').textContent = msg;
+      document.getElementById('error-state').style.display = 'block';
+    }
+
+    function notifyOpener(ok, detail) {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'mailroom:oauth',
+          ok,
+          detail
+        }, window.location.origin);
+      }
+    }
+
+    handleCallback();
+  </script>
+</body>
+</html>

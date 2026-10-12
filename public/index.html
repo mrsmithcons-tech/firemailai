@@ -178,9 +178,9 @@
         <div class="page-heading"><div><span class="eyebrow">YOUR WORKSPACE, YOUR CONTROL</span><h1>Accounts & lock<span class="heading-dot">.</span></h1><p>Connect inboxes, manage separate passwords, and view shared links.</p></div><button id="back-inbox" class="button secondary"><span data-icon="arrow-left"></span> Back to inbox</button></div>
         <div class="settings-grid">
           <section class="settings-card">
-            <div class="card-heading"><div><h2>Gmail accounts</h2><p>Saved details, passwords, and IMAP credentials.</p></div><button id="add-account" class="button primary small"><span data-icon="plus"></span> Add account</button></div>
+            <div class="card-heading"><div><h2>Gmail accounts</h2><p>Saved details, 1-Click Google OAuth, and IMAP credentials.</p></div><div class="heading-buttons"><button id="oauth-settings-btn" type="button" class="button secondary small"><span data-icon="settings"></span> OAuth Setup</button><button id="add-account" class="button primary small"><span data-icon="plus"></span> Add account</button></div></div>
             <div id="settings-accounts"></div>
-            <div class="settings-note"><span data-icon="info"></span><p>Gmail Login Password and Google App Password are saved separately. Live 24/7 inbox sync uses your 16-character App Password.</p></div>
+            <div class="settings-note"><span data-icon="info"></span><p>Connect with 1-Click Google OAuth or save App Passwords separately. Both enable continuous 24/7 background sync.</p></div>
           </section>
           <section class="settings-card">
             <div class="card-heading"><div><h2>Shared Inboxes</h2><p>Inboxes shared with colleagues or assistants via Passcode.</p></div><button id="add-share" class="button primary small"><span data-icon="share"></span> Share inbox</button></div>
@@ -216,10 +216,23 @@
     </form>
   </dialog>
 
-  <!-- Add/Edit Account Dialog (Separating Gmail Password & App Password) -->
+  <!-- Add/Edit Account Dialog (1-Click Google OAuth & Passwords) -->
   <dialog id="account-dialog" class="small-dialog">
     <form id="account-form">
       <div class="dialog-header"><h2 id="account-dialog-title">Save an account</h2><button type="button" class="icon-button" data-close="account-dialog" data-icon="x" aria-label="Close account form"></button></div>
+      
+      <!-- 1-Click Google Login / OAuth Connection Button -->
+      <div class="oauth-section">
+        <button type="button" class="google-oauth-connect-btn" id="google-oauth-btn">
+          <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+          <span>Connect with Google (1-Click)</span>
+        </button>
+        <div class="oauth-sub-actions">
+          <button type="button" id="configure-oauth-btn" class="text-button"><span data-icon="settings"></span> Configure OAuth Client ID</button>
+        </div>
+        <div class="gate-divider"><span>or enter credentials manually</span></div>
+      </div>
+
       <label for="saved-email">Gmail address</label>
       <input id="saved-email" type="email" maxlength="254" autocomplete="off" required placeholder="you@gmail.com">
       
@@ -428,6 +441,41 @@
       <div id="change-lock-notice" class="notice" hidden></div>
       <p class="field-hint">Please write down your new passcode. If lost, recovery is only available via admin at mrsmithcons@gmail.com.</p>
       <button type="submit" class="button primary wide">Update passcode</button>
+    </form>
+  </dialog>
+
+  <!-- Google OAuth 2.0 Configuration Dialog -->
+  <dialog id="oauth-config-dialog" class="small-dialog">
+    <form id="oauth-config-form">
+      <div class="dialog-header">
+        <div>
+          <span class="eyebrow">GOOGLE OAUTH INTEGRATION</span>
+          <h2>Google OAuth 2.0 Setup</h2>
+        </div>
+        <button type="button" class="icon-button" data-close="oauth-config-dialog" data-icon="x" aria-label="Close OAuth setup"></button>
+      </div>
+
+      <p class="field-hint" style="margin-top:0">Configure your Google OAuth 2.0 Client to enable 1-Click login for your workspace.</p>
+
+      <label for="oauth-client-id">Google Client ID</label>
+      <input id="oauth-client-id" type="text" placeholder="e.g. 209268511907-xxx.apps.googleusercontent.com" required autocomplete="off">
+
+      <label for="oauth-client-secret">Google Client Secret <span class="optional">optional</span></label>
+      <input id="oauth-client-secret" type="password" placeholder="e.g. GOCSPX-xxxxxx" autocomplete="off">
+
+      <div class="oauth-redirect-box">
+        <span class="eyebrow">AUTHORIZED REDIRECT URI</span>
+        <div class="oauth-uri-copy">
+          <code id="oauth-redirect-uri">https://firemailai.web.app/api/oauth/callback</code>
+          <button type="button" id="copy-redirect-uri-btn" class="button small secondary">Copy</button>
+        </div>
+        <p class="field-hint" style="margin:8px 0 0">Add this exact URI under <strong>Authorized redirect URIs</strong> in your <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>.</p>
+      </div>
+
+      <div id="oauth-notice" class="notice" hidden></div>
+      <div class="oauth-actions">
+        <button type="submit" class="button primary wide">Save OAuth Configuration</button>
+      </div>
     </form>
   </dialog>
 
