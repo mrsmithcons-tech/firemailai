@@ -292,8 +292,11 @@
         <button type="button" class="icon-button" data-close="share-dialog" data-icon="x" aria-label="Close share form"></button>
       </div>
       
-      <label for="share-account-select">Select Account</label>
-      <select id="share-account-select" required></select>
+      <div class="share-accounts-heading">
+        <label class="scope-heading-label">Linked Gmail Accounts to Share</label>
+        <button type="button" id="share-select-all-btn" class="text-button">Select All</button>
+      </div>
+      <div id="share-accounts-list" class="share-accounts-checklist"></div>
 
       <label class="scope-heading-label">What would you like to share?</label>
       <div class="share-scope-tabs">

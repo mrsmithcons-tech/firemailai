@@ -162,11 +162,19 @@ async function api(path, { method = 'GET', body } = {}) {
   if (path.startsWith('/api/messages')) {
     const url = new URL('http://local' + path);
     const folder = url.searchParams.get('folder') || 'INBOX';
-    const account = state.isGuest ? state.shareInfo.accountId : (url.searchParams.get('account') || 'all');
+    let account = url.searchParams.get('account') || 'all';
+    if (state.isGuest && state.shareInfo) {
+      const allowedIds = new Set(state.shareInfo.accountIds || [state.shareInfo.accountId]);
+      if (account !== 'all' && !allowedIds.has(account)) {
+        account = (state.shareInfo.accountIds && state.shareInfo.accountIds[0]) || state.shareInfo.accountId;
+      }
+    }
     const q = url.searchParams.get('q') || '';
     const force = url.searchParams.get('force') === '1';
     const res = await getMessages({ folder, account, q, forceRefresh: force });
     if (state.isGuest && state.shareInfo && res && Array.isArray(res.messages)) {
+      const allowedIds = new Set(state.shareInfo.accountIds || [state.shareInfo.accountId]);
+      res.messages = res.messages.filter(m => allowedIds.has(m.accountId));
       if (state.shareInfo.shareType === 'sender' && state.shareInfo.filterSender) {
         const needle = state.shareInfo.filterSender.trim().toLowerCase();
         res.messages = res.messages.filter(m => (m.from || '').toLowerCase().includes(needle));
@@ -279,15 +287,23 @@ async function enterWorkspace(session) {
   if (session.isShared || session.role === 'guest') {
     state.isGuest = true;
     state.shareInfo = session;
-    state.account = session.accountId;
+    const sharedIds = Array.isArray(session.accountIds) && session.accountIds.length ? session.accountIds : [session.accountId];
+    const sharedEmails = Array.isArray(session.accountEmails) && session.accountEmails.length ? session.accountEmails : [session.accountEmail];
+    state.account = sharedIds.length > 1 ? 'all' : sharedIds[0];
     state.folder = 'INBOX';
     $('guest-banner').hidden = false;
-    let desc = 'You have read & compose access to this inbox only.';
+
+    const accSummary = sharedEmails.length > 1
+      ? `${sharedEmails.length} Linked Accounts (${sharedEmails.map(e => e.split('@')[0]).join(', ')})`
+      : sharedEmails[0];
+    let desc = `Accounts: ${esc(accSummary)}`;
     if (session.shareType === 'sender' && session.filterSender) {
-      desc = `Filtered View: Only incoming emails from "${esc(session.filterSender)}" are visible.`;
+      desc += ` · Filtered: only incoming emails from "${esc(session.filterSender)}".`;
     } else if (session.shareType === 'selected') {
       const c = session.selectedMessageIds ? session.selectedMessageIds.length : 0;
-      desc = `Specific View: ${c} selected email${c === 1 ? '' : 's'} shared with you.`;
+      desc += ` · ${c} selected email${c === 1 ? '' : 's'} shared with you.`;
+    } else {
+      desc += ` · All incoming emails (unfiltered).`;
     }
     $('guest-banner').innerHTML = `<span data-icon="shield"></span><span><strong>Shared Access (${esc(session.label || 'Guest')})</strong> · ${desc}</span><button id="guest-exit" class="button small secondary" type="button">Exit</button>`;
     $('guest-exit')?.addEventListener('click', () => lockDashboard('Exited shared workspace.'));
@@ -299,20 +315,21 @@ async function enterWorkspace(session) {
     if ($('share-inbox-btn')) $('share-inbox-btn').hidden = true;
     if ($('share-inbox-header-btn')) $('share-inbox-header-btn').hidden = true;
     if ($('connect-main')) $('connect-main').hidden = true;
-    if ($('accounts-heading')) $('accounts-heading').hidden = true;
-    if ($('account-nav')) $('account-nav').hidden = true;
+    if ($('connect-sidebar')) $('connect-sidebar').hidden = true;
+    if ($('accounts-heading')) $('accounts-heading').hidden = sharedIds.length <= 1;
+    if ($('account-nav')) $('account-nav').hidden = sharedIds.length <= 1;
     if ($('profile-button')) $('profile-button').hidden = true;
     // Restrict folder navigation for guest: only INBOX is accessible
     document.querySelectorAll('.folder-nav .nav-item').forEach(el => {
       if (el.dataset.folder && el.dataset.folder !== 'INBOX') el.hidden = true;
     });
-    $('breadcrumb').textContent = session.label || session.accountEmail || 'Shared Inbox';
-    state.accounts = [{
-      id: session.accountId,
-      email: session.accountEmail,
-      label: session.label || 'Shared Inbox',
+    $('breadcrumb').textContent = session.label || accSummary;
+    state.accounts = sharedEmails.map((email, idx) => ({
+      id: sharedIds[idx] || session.accountId,
+      email,
+      label: email.split('@')[0],
       connected: true
-    }];
+    }));
     renderAccounts();
   } else {
     state.isGuest = false;
@@ -576,6 +593,9 @@ async function renderSettingsShares() {
         : s.shareType === 'selected'
         ? `<span class="scope-chip selected-chip">${icon('check')} <strong>${s.selectedMessageIds ? s.selectedMessageIds.length : 0} Selected Emails</strong></span>`
         : `<span class="scope-chip all-chip">${icon('inbox')} Full Inbox</span>`;
+      const accountsLabel = s.accountEmails && s.accountEmails.length > 1
+        ? `${s.accountEmails.length} Linked Accounts: ${s.accountEmails.join(', ')}`
+        : `Account: ${s.accountEmail || (s.accountEmails && s.accountEmails[0]) || 'Primary'}`;
       return `
         <div class="saved-account share-account-card">
           <div class="sender-avatar" style="background:#b8d3dd">${icon('share')}</div>
@@ -585,7 +605,7 @@ async function renderSettingsShares() {
               <span class="account-status connected">PASSCODE ACTIVE</span>
             </div>
             <div class="share-scope-badge-wrap">${scopeBadge}</div>
-            <small>Account: ${esc(s.accountEmail)} · Created ${esc(stamp(s.createdAt))}</small>
+            <small>${esc(accountsLabel)} · Created ${esc(stamp(s.createdAt))}</small>
           </div>
           <div class="saved-account-actions">
             <button class="icon-button" data-remove-share="${esc(s.id)}" aria-label="Revoke share access">${icon('trash')}</button>
@@ -937,6 +957,25 @@ function updateShareScopeUI() {
   }
 }
 
+function renderShareAccountsChecklist() {
+  const container = $('share-accounts-list');
+  if (!container) return;
+  const accounts = state.accounts;
+  container.innerHTML = accounts.map(a => `
+    <label class="share-account-tile">
+      <input type="checkbox" name="share-accounts" value="${esc(a.id)}" checked>
+      <div class="share-account-card">
+        <span class="account-dot" style="background:${color(a.email)}"></span>
+        <div class="share-account-meta">
+          <strong>${esc(a.label || a.email.split('@')[0])}</strong>
+          <small>${esc(a.email)}</small>
+        </div>
+      </div>
+    </label>
+  `).join('');
+  if ($('share-select-all-btn')) $('share-select-all-btn').textContent = 'Deselect All';
+}
+
 function openShareDialog(initialScope = 'all') {
   if (state.isGuest) return;
   const accounts = state.accounts;
@@ -944,7 +983,7 @@ function openShareDialog(initialScope = 'all') {
     toast('Add a Gmail account before creating a shared inbox link.', true);
     return;
   }
-  $('share-account-select').innerHTML = accounts.map(a => `<option value="${esc(a.id)}">${esc(a.label || a.email)} (${esc(a.email)})</option>`).join('');
+  renderShareAccountsChecklist();
   $('share-form').reset();
   $('share-passcode').type = 'password';
 
@@ -959,6 +998,14 @@ function openShareDialog(initialScope = 'all') {
 $('share-inbox-btn').addEventListener('click', () => openShareDialog());
 $('share-inbox-header-btn').addEventListener('click', () => openShareDialog());
 $('add-share').addEventListener('click', () => openShareDialog());
+if ($('share-select-all-btn')) {
+  $('share-select-all-btn').addEventListener('click', () => {
+    const boxes = document.querySelectorAll('input[name="share-accounts"]');
+    const allChecked = Array.from(boxes).every(b => b.checked);
+    boxes.forEach(b => b.checked = !allChecked);
+    $('share-select-all-btn').textContent = allChecked ? 'Select All' : 'Deselect All';
+  });
+}
 document.querySelectorAll('input[name="share-scope"]').forEach(r => {
   r.addEventListener('change', updateShareScopeUI);
 });
@@ -968,7 +1015,12 @@ $('toggle-share-pwd').addEventListener('click', () => {
 $('share-form').addEventListener('submit', async event => {
   event.preventDefault();
   notice('share-notice');
-  const accountId = $('share-account-select').value;
+  const checkedBoxes = document.querySelectorAll('input[name="share-accounts"]:checked');
+  const accountIds = Array.from(checkedBoxes).map(b => b.value);
+  if (!accountIds.length) {
+    notice('share-notice', 'Please select at least one linked Gmail account to share.', false);
+    return;
+  }
   const label = $('share-label').value.trim();
   const passcode = $('share-passcode').value;
   const shareType = document.querySelector('input[name="share-scope"]:checked')?.value || 'all';
@@ -989,11 +1041,23 @@ $('share-form').addEventListener('submit', async event => {
   try {
     await api('/api/shares', {
       method: 'POST',
-      body: { accountId, label, passcode, shareType, filterSender, selectedMessageIds }
+      body: {
+        accountIds,
+        accountId: accountIds[0],
+        label,
+        passcode,
+        shareType,
+        filterSender,
+        selectedMessageIds
+      }
     });
     $('share-dialog').close();
     $('share-form').reset();
-    const typeLabel = shareType === 'sender' ? `Filtered by "${filterSender}"` : shareType === 'selected' ? `${selectedMessageIds.length} selected emails` : 'Full inbox';
+    const typeLabel = shareType === 'sender'
+      ? `Filtered by "${filterSender}" across ${accountIds.length} account${accountIds.length > 1 ? 's' : ''}`
+      : shareType === 'selected'
+      ? `${selectedMessageIds.length} selected emails`
+      : `Full access to ${accountIds.length} account${accountIds.length > 1 ? 's' : ''}`;
     toast(`Shared access passcode created! (${typeLabel})`);
     if (state.settings) renderSettingsShares();
   } catch (err) {

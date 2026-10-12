@@ -186,13 +186,17 @@ export async function verifyPasscode(passcode) {
         const sh = await hashPasscode(passcode, share.salt);
         if (sh === share.hash) {
           await logAudit('share.accessed', share.id);
+          const matchedIds = Array.isArray(share.accountIds) && share.accountIds.length ? share.accountIds : [share.accountId];
+          const matchedEmails = Array.isArray(share.accountEmails) && share.accountEmails.length ? share.accountEmails : [share.accountEmail];
           return {
             token: crypto.randomUUID(),
             isShared: true,
             role: 'guest',
             shareId: share.id,
-            accountId: share.accountId,
-            accountEmail: share.accountEmail,
+            accountId: matchedIds[0],
+            accountIds: matchedIds,
+            accountEmail: matchedEmails[0],
+            accountEmails: matchedEmails,
             label: share.label || 'Shared Inbox',
             shareType: share.shareType || 'all',
             filterSender: share.filterSender || '',
@@ -259,7 +263,9 @@ export async function getSharedInboxes() {
   return Object.values(data).map(s => ({
     id: s.id,
     accountId: s.accountId,
+    accountIds: Array.isArray(s.accountIds) && s.accountIds.length ? s.accountIds : [s.accountId],
     accountEmail: s.accountEmail,
+    accountEmails: Array.isArray(s.accountEmails) && s.accountEmails.length ? s.accountEmails : [s.accountEmail],
     label: s.label || 'Shared View',
     createdAt: s.createdAt,
     shareType: s.shareType || 'all',
@@ -271,6 +277,7 @@ export async function getSharedInboxes() {
 
 export async function createSharedInbox({
   accountId,
+  accountIds = [],
   label,
   passcode,
   shareType = 'all',
@@ -281,9 +288,13 @@ export async function createSharedInbox({
   if (!passcode || passcode.length < 4) {
     throw new Error('Share passcode must be at least 4 characters.');
   }
-  const accounts = await getAccounts();
-  const acc = accounts.find(a => a.id === accountId);
-  if (!acc) throw new Error('Account not found to share.');
+  const allAccounts = await getAccounts();
+  const targetIds = Array.isArray(accountIds) && accountIds.length ? accountIds : (accountId ? [accountId] : []);
+  if (!targetIds.length) {
+    throw new Error('Please select at least one linked account to share.');
+  }
+  const matchedAccounts = allAccounts.filter(a => targetIds.includes(a.id));
+  if (!matchedAccounts.length) throw new Error('Selected account(s) not found.');
 
   if (shareType === 'sender' && !filterSender.trim()) {
     throw new Error('Please enter a sender email address or domain to filter by.');
@@ -296,11 +307,17 @@ export async function createSharedInbox({
   const salt = generateSalt();
   const hash = await hashPasscode(passcode, salt);
 
+  const defaultLabel = matchedAccounts.length > 1
+    ? `${matchedAccounts.length} Linked Accounts Shared`
+    : `Share: ${matchedAccounts[0].label || matchedAccounts[0].email}`;
+
   const payload = {
     id: shareId,
-    accountId: acc.id,
-    accountEmail: acc.email,
-    label: (label || `Share: ${acc.label}`).trim(),
+    accountId: matchedAccounts[0].id,
+    accountIds: matchedAccounts.map(a => a.id),
+    accountEmail: matchedAccounts[0].email,
+    accountEmails: matchedAccounts.map(a => a.email),
+    label: (label || defaultLabel).trim(),
     salt,
     hash,
     shareType,
