@@ -7,7 +7,8 @@
     "check": "node scripts/check.mjs",
     "deploy": "firebase deploy --only database,functions:mailApi,hosting",
     "sync": "node scripts/sync-inbox.mjs",
-    "sync:watch": "node scripts/sync-inbox.mjs --watch"
+    "sync:watch": "node scripts/sync-inbox.mjs --watch",
+    "start": "node scripts/sync-inbox.mjs --watch"
   },
   "dependencies": {
     "imapflow": "^2.4.0",

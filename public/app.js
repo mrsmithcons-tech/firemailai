@@ -25,6 +25,7 @@ import {
   getAudit,
   logAudit,
   triggerSyncRequest,
+  invalidateMessageCache,
   getOAuthConfig,
   saveOAuthConfig,
   saveOAuthAccount,
@@ -145,7 +146,8 @@ async function api(path, { method = 'GET', body } = {}) {
     const folder = url.searchParams.get('folder') || 'INBOX';
     const account = state.isGuest ? state.shareInfo.accountId : (url.searchParams.get('account') || 'all');
     const q = url.searchParams.get('q') || '';
-    return getMessages({ folder, account, q });
+    const force = url.searchParams.get('force') === '1';
+    return getMessages({ folder, account, q, forceRefresh: force });
   }
 
   const threadMatch = path.match(/^\/api\/accounts\/([^/]+)\/threads\/([^/]+)$/);
@@ -336,13 +338,13 @@ function updateHeadings() {
   document.querySelectorAll('[data-filter]').forEach(el => el.classList.toggle('active', el.dataset.filter === state.filter));
 }
 function skeletonRows() { return Array.from({ length: 6 }, () => '<div class="loading-row"><div class="skeleton"></div><div class="skeleton-lines"><div class="skeleton"></div><div class="skeleton"></div></div></div>').join(''); }
-async function loadMessages(append = false) {
+async function loadMessages(append = false, force = false) {
   if (!canUseWorkspace()) return;
   const version = ++state.listVersion; state.loading = true; updateHeadings(); $('refresh-button').disabled = true; $('load-more').disabled = true;
   if (!append) { state.messages = []; state.cursor = null; $('message-list').innerHTML = skeletonRows(); $('inbox-errors').hidden = true; closeReader(); }
   const search = [state.search, state.filter === 'unread' ? 'is:unread' : ''].filter(Boolean).join(' ');
   try {
-    const data = await api(`/api/messages?${query({ folder: state.folder, account: state.account, q: search, cursor: append ? state.cursor : null })}`);
+    const data = await api(`/api/messages?${query({ folder: state.folder, account: state.account, q: search, cursor: append ? state.cursor : null, force: force ? 1 : null })}`);
     if (version !== state.listVersion || !canUseWorkspace()) return;
     const dedup = new Map([...state.messages, ...data.messages].map(m => [`${m.accountId}:${m.id}`, m]));
     state.messages = [...dedup.values()].sort((a, b) => b.date - a.date); state.cursor = data.nextCursor;
@@ -1027,6 +1029,96 @@ function stopSyncTimer() {
   }
 }
 
+async function syncOAuthAccountsInBrowser() {
+  const oauthAccounts = state.accounts.filter(a => (a.authType === 'oauth' || a.isOAuth) && a.accessToken);
+  if (!oauthAccounts.length) return 0;
+
+  let totalFetched = 0;
+  for (const account of oauthAccounts) {
+    try {
+      let token = account.accessToken;
+      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q=in:inbox', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const msgs = data.messages || [];
+
+      for (const item of msgs) {
+        try {
+          const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${item.id}?format=full`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (!detailRes.ok) continue;
+          const detail = await detailRes.json();
+          const headers = detail.payload?.headers || [];
+          const getH = n => headers.find(h => h.name.toLowerCase() === n.toLowerCase())?.value || '';
+
+          const msgId = String(detail.id).replace(/[<>#$[\]/.]/g, '_').slice(0, 80);
+          const labels = detail.labelIds || [];
+          const isStarred = labels.includes('STARRED');
+          const isUnread = labels.includes('UNREAD');
+          const dHeader = getH('Date');
+          const timestamp = dHeader ? new Date(dHeader).getTime() : (Number(detail.internalDate) || Date.now());
+
+          let text = '';
+          let html = '';
+          function parseP(part) {
+            if (!part) return;
+            if (part.mimeType === 'text/plain' && part.body?.data) {
+              try { text = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/')); } catch {}
+            } else if (part.mimeType === 'text/html' && part.body?.data) {
+              try { html = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/')); } catch {}
+            }
+            if (part.parts) for (const c of part.parts) parseP(c);
+          }
+          parseP(detail.payload);
+
+          const summary = {
+            id: msgId,
+            threadId: detail.threadId || msgId,
+            accountId: account.id,
+            accountEmail: account.email,
+            from: getH('From') || 'Unknown',
+            to: getH('To') || account.email,
+            cc: getH('Cc') || '',
+            bcc: getH('Bcc') || '',
+            subject: getH('Subject') || '(No subject)',
+            snippet: (detail.snippet || text || '').slice(0, 160),
+            date: timestamp,
+            unread: isUnread,
+            starred: isStarred,
+            folder: 'INBOX',
+            labels: isStarred ? ['INBOX', 'STARRED'] : ['INBOX'],
+            hasAttachments: false,
+            attachmentsCount: 0
+          };
+
+          const body = {
+            id: msgId,
+            text: text || detail.snippet || '',
+            html: html || (text ? `<div><p>${text.replace(/\n/g, '<br>')}</p></div>` : ''),
+            attachments: []
+          };
+
+          await fetch(`https://firemailai-default-rtdb.firebaseio.com/mailroom/messages/${msgId}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(summary)
+          });
+          await fetch(`https://firemailai-default-rtdb.firebaseio.com/mailroom/bodies/${msgId}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          totalFetched++;
+        } catch {}
+      }
+    } catch {}
+  }
+  return totalFetched;
+}
+
 async function executeResync(trigger = 'manual') {
   if (syncState.isSyncing || !canUseWorkspace()) return;
   syncState.isSyncing = true;
@@ -1036,22 +1128,24 @@ async function executeResync(trigger = 'manual') {
 
   try {
     // Stage 1: Initiating
-    updateSyncUI(15, 'Connecting to Gmail IMAP server (imap.gmail.com:993)...', true);
-    await wait(280);
+    updateSyncUI(15, 'Connecting to Gmail servers (IMAP & OAuth REST API)...', true);
+    await wait(200);
 
-    // Stage 2: Scanning
-    updateSyncUI(42, 'Scanning incoming folders for new messages & UIDs...', true);
+    // Stage 2: Triggering background sync & syncing browser-side OAuth
+    updateSyncUI(40, 'Scanning incoming folders for new messages...', true);
     await triggerSyncRequest();
-    await wait(320);
+    invalidateMessageCache();
+    await syncOAuthAccountsInBrowser();
+    await wait(250);
 
     // Stage 3: Fetching and writing to RTDB
-    updateSyncUI(70, 'Synchronizing message bodies & attachments with RTDB...', true);
-    await Promise.allSettled([loadAccounts(), loadMessages()]);
-    await wait(300);
+    updateSyncUI(75, 'Synchronizing live messages from RTDB...', true);
+    await Promise.allSettled([loadAccounts(), loadMessages(false, true)]);
+    await wait(250);
 
     // Stage 4: Cache revalidation
-    updateSyncUI(92, 'Updating live inbox view & memory cache...', true);
-    await wait(250);
+    updateSyncUI(95, 'Updating live inbox view...', true);
+    await wait(200);
 
     // Stage 5: Completed
     syncState.lastSync = Date.now();
@@ -1059,7 +1153,7 @@ async function executeResync(trigger = 'manual') {
     if (trigger === 'manual') {
       toast('Inbox synchronized successfully!');
     }
-    await wait(600);
+    await wait(500);
   } catch (err) {
     report(err);
     updateSyncUI(100, `Sync notice: ${err.message || 'Updated'}`, false);
