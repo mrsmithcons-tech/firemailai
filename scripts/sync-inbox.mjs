@@ -87,8 +87,14 @@ async function syncOAuthAccount(account) {
     const messages = listData.messages || [];
     console.log(`📬 Found ${messages.length} messages via Gmail REST API.`);
 
+    const existingMap = (await rtdbRequest('mailroom/messages')) || {};
+
     for (const item of messages) {
       try {
+        const msgId = cleanMsgId(item.id);
+        if (existingMap[msgId] && (existingMap[msgId].folder === 'TRASH' || existingMap[msgId].folder === 'SPAM')) {
+          continue;
+        }
         const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${item.id}?format=full`, {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
@@ -98,7 +104,6 @@ async function syncOAuthAccount(account) {
         const headers = msgData.payload?.headers || [];
         const getHeader = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
 
-        const msgId = cleanMsgId(msgData.id);
         const subject = getHeader('Subject') || '(No subject)';
         const from = getHeader('From') || 'Unknown';
         const to = getHeader('To') || email;
@@ -216,6 +221,10 @@ export async function syncAccount(account) {
     logger: false
   });
 
+  client.on('error', err => {
+    console.warn(`⚠️ [IMAP ${email}] Network error: ${err.message}`);
+  });
+
   let syncedCount = 0;
 
   try {
@@ -234,6 +243,8 @@ export async function syncAccount(account) {
         const fetchRange = `${Math.max(1, total - 24)}:*`;
         console.log(`📥 Fetching messages in range ${fetchRange}...`);
 
+        const existingMap = (await rtdbRequest('mailroom/messages')) || {};
+
         for await (const message of client.fetch(fetchRange, {
           envelope: true,
           flags: true,
@@ -243,6 +254,9 @@ export async function syncAccount(account) {
           try {
             const parsed = await simpleParser(message.source);
             const msgId = cleanMsgId(parsed.messageId || `msg_${message.uid}_${message.envelope?.date?.getTime() || Date.now()}`);
+            if (existingMap[msgId] && (existingMap[msgId].folder === 'TRASH' || existingMap[msgId].folder === 'SPAM')) {
+              continue;
+            }
             const isUnread = !message.flags.has('\\Seen');
             const isStarred = message.flags.has('\\Flagged');
 
@@ -341,6 +355,14 @@ export async function syncAll() {
   console.log(`\n Total messages updated in RTDB: ${totalSynced}`);
   console.log(`========================================\n`);
 }
+
+process.on('uncaughtException', err => {
+  console.warn('⚠️ [Process uncaughtException handled]:', err.message);
+});
+
+process.on('unhandledRejection', reason => {
+  console.warn('⚠️ [Process unhandledRejection handled]:', reason?.message || reason);
+});
 
 async function main() {
   const isWatch = process.argv.includes('--watch');

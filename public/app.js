@@ -29,6 +29,9 @@ import {
   getOAuthConfig,
   saveOAuthConfig,
   saveOAuthAccount,
+  getAIConfig,
+  saveAIConfig,
+  classifyEmailsWithAI,
   PLANS
 } from './rtdb.js';
 
@@ -67,7 +70,11 @@ const state = {
   currentPlan: 'free',
   shares: [],
   selectedMessages: new Set(),
-  selectMode: false
+  selectMode: false,
+  aiConfig: null,
+  aiClassifications: new Map(),
+  aiImportantOnly: false,
+  aiScanResults: []
 };
 let revealTimer;
 
@@ -227,6 +234,16 @@ async function api(path, { method = 'GET', body } = {}) {
   }
   if (path === '/api/oauth/config' && method === 'POST') {
     return saveOAuthConfig(body);
+  }
+
+  if (path === '/api/ai/config' && method === 'GET') {
+    return getAIConfig();
+  }
+  if (path === '/api/ai/config' && method === 'POST') {
+    return saveAIConfig(body);
+  }
+  if (path === '/api/ai/classify' && method === 'POST') {
+    return classifyEmailsWithAI(body);
   }
 
   throw new Error(`Route not supported: ${path}`);
@@ -430,17 +447,40 @@ async function loadMessages(append = false, force = false) {
   } finally { if (version === state.listVersion) { state.loading = false; $('refresh-button').disabled = false; $('load-more').disabled = false; } }
 }
 function renderMessages() {
-  $('message-count').textContent = `${state.messages.length} loaded`;
-  $('load-more').hidden = !state.cursor;
+  let visibleList = state.messages;
+  if (state.aiImportantOnly) {
+    visibleList = state.messages.filter(m => {
+      const info = state.aiClassifications.get(m.id);
+      if (info) return info.category === 'important';
+      return m.starred || !/newsletter|marketing|promo|unsubscribe|deal|discount|digest|sale/i.test((m.subject || '') + ' ' + (m.snippet || ''));
+    });
+  }
+
+  $('message-count').textContent = state.aiImportantOnly
+    ? `${visibleList.length} important (of ${state.messages.length})`
+    : `${state.messages.length} loaded`;
+  $('load-more').hidden = !state.cursor || state.aiImportantOnly;
   updateBulkShareBar();
-  if (!state.messages.length) {
+
+  if ($('ai-important-toggle')) {
+    $('ai-important-toggle').classList.toggle('active', state.aiImportantOnly);
+  }
+
+  if (!visibleList.length) {
     const first = !connectedAccounts().length;
-    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : ''}</div>`;
+    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.aiImportantOnly ? 'No important emails matching filter' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.aiImportantOnly ? 'Click "✨ AI Cleaner" to analyze emails across all linked accounts with Groq / OpenRouter AI.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : state.aiImportantOnly ? '<button class="button primary" id="empty-run-ai-btn">Run AI Cleaner</button>' : ''}</div>`;
+    if ($('empty-run-ai-btn')) {
+      $('empty-run-ai-btn').addEventListener('click', openAICleanerDialog);
+    }
     return;
   }
   const showSelect = !state.isGuest;
-  $('message-list').innerHTML = state.messages.map((m, index) => {
+  $('message-list').innerHTML = visibleList.map((m, index) => {
     const isSelected = state.selectedMessages.has(m.id);
+    const aiInfo = state.aiClassifications.get(m.id);
+    const aiTag = aiInfo?.category === 'important'
+      ? `<span class="ai-tag-important">${icon('sparkles')} Important</span>`
+      : '';
     return `<article class="message-row ${m.unread ? 'unread' : ''} ${state.activeId === `${m.accountId}:${m.id}` ? 'active' : ''} ${isSelected ? 'row-selected' : ''}" data-row-idx="${index}">
       ${showSelect ? `<button class="row-select-btn ${isSelected ? 'selected' : ''}" data-select-idx="${index}" type="button" aria-label="${isSelected ? 'Deselect message' : 'Select message'}"><span class="select-checkbox">${icon(isSelected ? 'check' : 'circle')}</span></button>` : ''}
       <button class="row-open" data-open="${index}" aria-label="${esc(`Open ${m.subject} from ${person(m.from)}`)}"></button>
@@ -455,6 +495,7 @@ function renderMessages() {
           <span class="message-date">${esc(stamp(m.date))}</span>
         </div>
         <div class="message-summary-line">
+          ${aiTag}
           ${m.draftId ? '<span class="draft-chip">Draft</span> ' : ''}
           <span class="message-subject">${esc(m.subject)}</span>
           <span class="message-preview">${esc(m.snippet)}</span>
@@ -1658,6 +1699,345 @@ if ($('copy-redirect-uri-btn')) $('copy-redirect-uri-btn').addEventListener('cli
     toast('Clipboard access denied.', true);
   }
 });
+
+// ==========================================================================
+// AI Cleaner & Provider Setup (Groq + OpenRouter)
+// ==========================================================================
+async function getActiveAIConfig() {
+  if (state.aiConfig) return state.aiConfig;
+  try {
+    const config = await api('/api/ai/config');
+    state.aiConfig = config;
+    return config;
+  } catch {
+    return {
+      provider: 'groq',
+      apiKey: '',
+      groqApiKey: '',
+      openRouterApiKey: '',
+      model: 'llama-3.3-70b-versatile',
+      isConfigured: false
+    };
+  }
+}
+
+async function updateAICleanerUI() {
+  const config = await getActiveAIConfig();
+  const providerLabel = config.provider === 'openrouter' ? 'OpenRouter' : 'Groq';
+  if ($('ai-cleaner-current-model')) {
+    $('ai-cleaner-current-model').innerHTML = `<span data-icon="bot"></span> ${providerLabel}: ${esc(config.model || 'llama-3.3-70b-versatile')}`;
+    hydrateIcons($('ai-cleaner-current-model'));
+  }
+  if ($('ai-status-badge')) {
+    $('ai-status-badge').textContent = `${providerLabel.toUpperCase()} ACTIVE`;
+    $('ai-status-badge').className = 'account-status connected';
+  }
+  if ($('ai-model-label')) {
+    $('ai-model-label').textContent = `Provider: ${providerLabel} · Model: ${config.model || 'llama-3.3-70b-versatile'}`;
+  }
+}
+
+async function openAICleanerDialog() {
+  if (state.isGuest) return;
+  notice('ai-cleaner-notice');
+  await updateAICleanerUI();
+  if (state.aiScanResults && state.aiScanResults.length) {
+    $('ai-results-container').hidden = false;
+  } else {
+    $('ai-results-container').hidden = true;
+  }
+  $('ai-scan-progress').hidden = true;
+  $('ai-cleaner-dialog').showModal();
+}
+
+async function openAIConfigDialog() {
+  if (state.isGuest) return;
+  notice('ai-config-notice');
+  const config = await getActiveAIConfig();
+
+  const radio = document.querySelector(`input[name="ai-provider"][value="${config.provider || 'groq'}"]`);
+  if (radio) radio.checked = true;
+
+  if ($('groq-api-key')) $('groq-api-key').value = config.groqApiKey || '';
+  if ($('groq-model')) $('groq-model').value = config.model && config.provider === 'groq' ? config.model : 'llama-3.3-70b-versatile';
+  if ($('openrouter-api-key')) $('openrouter-api-key').value = config.openRouterApiKey || '';
+  if ($('openrouter-model')) {
+    const isStandard = ['google/gemini-2.0-flash-exp:free', 'meta-llama/llama-3.3-70b-instruct:free', 'openai/gpt-4o-mini', 'deepseek/deepseek-chat'].includes(config.model);
+    if (config.provider === 'openrouter' && !isStandard && config.model) {
+      $('openrouter-model').value = 'custom';
+      $('openrouter-custom-model').value = config.model;
+      $('custom-model-group').hidden = false;
+    } else {
+      $('openrouter-model').value = config.model && config.provider === 'openrouter' ? config.model : 'google/gemini-2.0-flash-exp:free';
+      $('custom-model-group').hidden = true;
+    }
+  }
+
+  updateAIConfigSectionVisibility();
+  $('ai-config-dialog').showModal();
+}
+
+function updateAIConfigSectionVisibility() {
+  const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'groq';
+  if ($('groq-config-section')) $('groq-config-section').hidden = provider !== 'groq';
+  if ($('openrouter-config-section')) $('openrouter-config-section').hidden = provider !== 'openrouter';
+}
+
+async function handleAIConfigSubmit(event) {
+  event.preventDefault();
+  notice('ai-config-notice');
+  const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'groq';
+  const groqApiKey = $('groq-api-key').value.trim();
+  const groqModel = $('groq-model').value;
+  const openRouterApiKey = $('openrouter-api-key').value.trim();
+  const openRouterSelect = $('openrouter-model').value;
+  const openRouterModel = openRouterSelect === 'custom' ? $('openrouter-custom-model').value.trim() : openRouterSelect;
+
+  const model = provider === 'groq' ? groqModel : openRouterModel;
+  const apiKey = provider === 'groq' ? groqApiKey : openRouterApiKey;
+
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const saved = await api('/api/ai/config', {
+      method: 'POST',
+      body: {
+        provider,
+        apiKey,
+        groqApiKey,
+        openRouterApiKey,
+        model
+      }
+    });
+    state.aiConfig = saved;
+    $('ai-config-dialog').close();
+    toast(`AI Engine updated: ${provider === 'groq' ? 'Groq' : 'OpenRouter'} (${model})`);
+    await updateAICleanerUI();
+  } catch (err) {
+    report(err, 'ai-config-notice');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runAIInboxScan() {
+  if (state.isGuest) return;
+  notice('ai-cleaner-notice');
+  const config = await getActiveAIConfig();
+  const scope = $('ai-scan-scope')?.value || 'all';
+  const limit = parseInt($('ai-scan-limit')?.value || '50', 10);
+
+  const startBtn = $('ai-start-scan-btn');
+  startBtn.disabled = true;
+  $('ai-scan-progress').hidden = false;
+  $('ai-results-container').hidden = true;
+  $('ai-scan-status-text').textContent = `Analyzing inbox with ${config.provider === 'openrouter' ? 'OpenRouter' : 'Groq'} (${config.model})...`;
+
+  try {
+    let candidateEmails = [];
+    if (scope === 'all') {
+      const allRes = await api('/api/messages?folder=INBOX&account=all');
+      candidateEmails = allRes.messages || [];
+    } else {
+      candidateEmails = state.messages.filter(m => m.folder === 'INBOX' || (m.labels && m.labels.includes('INBOX')));
+    }
+
+    if (!candidateEmails.length) {
+      notice('ai-cleaner-notice', 'No emails found in INBOX to analyze.', false);
+      $('ai-scan-progress').hidden = true;
+      startBtn.disabled = false;
+      return;
+    }
+
+    const scanBatch = candidateEmails.slice(0, limit);
+    const result = await api('/api/ai/classify', {
+      method: 'POST',
+      body: {
+        provider: config.provider,
+        apiKey: config.apiKey,
+        model: config.model,
+        emails: scanBatch
+      }
+    });
+
+    const classifications = result.classifications || [];
+    classifications.forEach(c => {
+      state.aiClassifications.set(c.id, c);
+    });
+
+    const uselessItems = [];
+    let keptCount = 0;
+    let normalCount = 0;
+
+    scanBatch.forEach(msg => {
+      const cls = state.aiClassifications.get(msg.id);
+      if (cls && (cls.category === 'useless' || cls.suggestedAction === 'trash')) {
+        uselessItems.push({
+          ...msg,
+          aiCategory: cls.category,
+          aiReason: cls.reason || 'Automated clutter / marketing blast'
+        });
+      } else if (cls && cls.category === 'important') {
+        keptCount++;
+      } else {
+        normalCount++;
+      }
+    });
+
+    state.aiScanResults = uselessItems;
+
+    $('ai-stat-kept').textContent = keptCount;
+    $('ai-stat-useless').textContent = uselessItems.length;
+    $('ai-stat-normal').textContent = normalCount;
+
+    $('ai-verdict-text').textContent = result.summary || `Scan finished: identified ${uselessItems.length} useless emails out of ${scanBatch.length} messages inspected.`;
+
+    renderAIUselessList();
+
+    $('ai-scan-progress').hidden = true;
+    $('ai-results-container').hidden = false;
+
+    renderMessages();
+  } catch (err) {
+    report(err, 'ai-cleaner-notice');
+    $('ai-scan-progress').hidden = true;
+  } finally {
+    startBtn.disabled = false;
+  }
+}
+
+function renderAIUselessList() {
+  const container = $('ai-useless-list');
+  if (!container) return;
+  const items = state.aiScanResults || [];
+
+  if (!items.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:#059669;font-weight:600">🎉 Great news! No useless clutter or marketing blasts detected in this batch.</div>';
+    $('ai-selected-trash-count').textContent = '0';
+    $('ai-trash-selected-btn').disabled = true;
+    return;
+  }
+
+  $('ai-trash-selected-btn').disabled = false;
+  $('ai-selected-trash-count').textContent = items.length;
+
+  container.innerHTML = items.map((m, idx) => `
+    <div class="ai-useless-row" data-useless-idx="${idx}">
+      <input type="checkbox" class="ai-useless-checkbox" data-msg-id="${esc(m.id)}" data-account-id="${esc(m.accountId)}" checked>
+      <div class="ai-useless-content">
+        <div class="ai-useless-top">
+          <span class="ai-useless-sender">${esc(person(m.from))}</span>
+          <span class="ai-account-chip">${esc(accountLabel(m.accountId))}</span>
+          <span class="ai-reason-pill useless">${esc(m.aiReason || 'Promo/Spam')}</span>
+        </div>
+        <div class="ai-useless-subject">${esc(m.subject || '(No subject)')}</div>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.ai-useless-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateUselessSelectedCount);
+  });
+}
+
+function updateUselessSelectedCount() {
+  const checked = document.querySelectorAll('.ai-useless-checkbox:checked').length;
+  $('ai-selected-trash-count').textContent = checked;
+  $('ai-trash-selected-btn').disabled = checked === 0;
+}
+
+function toggleAllUselessSelection() {
+  const boxes = document.querySelectorAll('.ai-useless-checkbox');
+  const allChecked = Array.from(boxes).every(b => b.checked);
+  boxes.forEach(b => b.checked = !allChecked);
+  $('ai-toggle-all-useless').textContent = allChecked ? 'Select All' : 'Deselect All';
+  updateUselessSelectedCount();
+}
+
+async function trashSelectedUselessEmails() {
+  const boxes = Array.from(document.querySelectorAll('.ai-useless-checkbox:checked'));
+  if (!boxes.length) {
+    toast('No useless emails selected to trash.', true);
+    return;
+  }
+
+  const btn = $('ai-trash-selected-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<span data-icon="refresh" class="spin"></span> Moving ${boxes.length} emails to Trash...`;
+  hydrateIcons(btn);
+
+  let successCount = 0;
+  const toDeleteIds = new Set();
+
+  for (const box of boxes) {
+    const msgId = box.dataset.msgId;
+    const accountId = box.dataset.accountId;
+    try {
+      await api(`/api/accounts/${accountId}/messages/${msgId}/action`, {
+        method: 'POST',
+        body: { action: 'trash' }
+      });
+      successCount++;
+      toDeleteIds.add(msgId);
+    } catch (err) {
+      console.warn(`Could not trash message ${msgId}:`, err);
+    }
+  }
+
+  state.messages = state.messages.filter(m => !toDeleteIds.has(m.id));
+  state.aiScanResults = (state.aiScanResults || []).filter(m => !toDeleteIds.has(m.id));
+
+  try {
+    await logAudit('ai.inbox_cleaned', `${successCount} useless emails moved to trash`);
+  } catch {}
+
+  toast(`✨ Cleaned inbox: moved ${successCount} useless email${successCount === 1 ? '' : 's'} to Trash.`);
+  $('ai-cleaner-dialog').close();
+  renderMessages();
+}
+
+function toggleImportantOnlyFilter() {
+  state.aiImportantOnly = !state.aiImportantOnly;
+  if (state.aiImportantOnly) {
+    toast('Showing Important Emails only.');
+  } else {
+    toast('Showing All Messages.');
+  }
+  renderMessages();
+}
+
+// AI Cleaner Event Listeners
+if ($('ai-cleaner-btn')) $('ai-cleaner-btn').addEventListener('click', openAICleanerDialog);
+if ($('ai-important-toggle')) $('ai-important-toggle').addEventListener('click', toggleImportantOnlyFilter);
+if ($('open-ai-cleaner-settings-btn')) $('open-ai-cleaner-settings-btn').addEventListener('click', openAICleanerDialog);
+if ($('config-ai-btn')) $('config-ai-btn').addEventListener('click', openAIConfigDialog);
+if ($('ai-open-settings-shortcut')) $('ai-open-settings-shortcut').addEventListener('click', openAIConfigDialog);
+if ($('ai-start-scan-btn')) $('ai-start-scan-btn').addEventListener('click', runAIInboxScan);
+if ($('ai-toggle-all-useless')) $('ai-toggle-all-useless').addEventListener('click', toggleAllUselessSelection);
+if ($('ai-trash-selected-btn')) $('ai-trash-selected-btn').addEventListener('click', trashSelectedUselessEmails);
+if ($('ai-config-form')) $('ai-config-form').addEventListener('submit', handleAIConfigSubmit);
+
+document.querySelectorAll('input[name="ai-provider"]').forEach(r => {
+  r.addEventListener('change', updateAIConfigSectionVisibility);
+});
+
+if ($('openrouter-model')) {
+  $('openrouter-model').addEventListener('change', () => {
+    $('custom-model-group').hidden = $('openrouter-model').value !== 'custom';
+  });
+}
+
+if ($('toggle-groq-key')) {
+  $('toggle-groq-key').addEventListener('click', () => {
+    $('groq-api-key').type = $('groq-api-key').type === 'password' ? 'text' : 'password';
+  });
+}
+
+if ($('toggle-openrouter-key')) {
+  $('toggle-openrouter-key').addEventListener('click', () => {
+    $('openrouter-api-key').type = $('openrouter-api-key').type === 'password' ? 'text' : 'password';
+  });
+}
 
 window.addEventListener('message', async event => {
   if (event.origin !== location.origin || event.data?.type !== 'mailroom:oauth') return;
