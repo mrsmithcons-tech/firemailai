@@ -921,11 +921,16 @@ $('copy-gmail-pwd-btn').addEventListener('click', async () => {
   }
 });
 
-for (const id of ['lock-button', 'settings-lock']) $(id).addEventListener('click', () => lockDashboard());
-$('menu-toggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
-document.addEventListener('click', event => { if ($('sidebar').classList.contains('open') && !event.target.closest('#sidebar, #menu-toggle')) $('sidebar').classList.remove('open'); });
+function toggleSidebar(open) {
+  const isOpen = open !== undefined ? open : !$('sidebar').classList.contains('open');
+  $('sidebar').classList.toggle('open', isOpen);
+  if ($('sidebar-backdrop')) $('sidebar-backdrop').hidden = !isOpen;
+}
+$('menu-toggle').addEventListener('click', () => toggleSidebar());
+if ($('sidebar-backdrop')) $('sidebar-backdrop').addEventListener('click', () => toggleSidebar(false));
+document.addEventListener('click', event => { if ($('sidebar').classList.contains('open') && !event.target.closest('#sidebar, #menu-toggle')) toggleSidebar(false); });
 for (const id of ['connect-sidebar', 'connect-main']) $(id).addEventListener('click', () => beginConnect());
-$('compose-button').addEventListener('click', () => { openCompose(); $('sidebar').classList.remove('open'); });
+$('compose-button').addEventListener('click', () => { openCompose(); toggleSidebar(false); });
 $('sidebar').addEventListener('click', async event => {
   const folder = event.target.closest('[data-folder]');
   if (folder) {

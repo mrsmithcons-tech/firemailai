@@ -7,6 +7,9 @@
   <meta name="description" content="A private home for your Gmail accounts. One dashboard, every inbox.">
   <title>Firemail AI — your private inbox</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
@@ -117,6 +120,7 @@
         <div class="secure-label"><span class="status-dot"></span> Private workspace<button id="lock-button" class="icon-button light" data-icon="lock" aria-label="Lock dashboard"></button></div>
       </div>
     </aside>
+    <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
     <main class="main">
       <header class="topbar">
         <div class="topbar-left"><button id="menu-toggle" class="icon-button mobile-only" data-icon="menu" aria-label="Open navigation"></button><span class="topbar-label">Your workspace</span><span class="topbar-slash">/</span><span id="breadcrumb">All accounts</span></div>
