@@ -756,7 +756,7 @@ export async function getAIConfig() {
       return {
         provider: 'groq',
         apiKey: activeKey,
-        model: config.model || 'llama-3.3-70b-versatile',
+        model: config.model || 'openai/gpt-oss-120b',
         isConfigured: Boolean(activeKey),
         updatedAt: config.updatedAt
       };
@@ -765,7 +765,7 @@ export async function getAIConfig() {
   return {
     provider: 'groq',
     apiKey: '',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     isConfigured: false
   };
 }
@@ -774,7 +774,7 @@ export async function saveAIConfig({ apiKey = '', model = '' }) {
   const payload = {
     provider: 'groq',
     apiKey: apiKey.trim(),
-    model: (model || 'llama-3.3-70b-versatile').trim(),
+    model: (model || 'openai/gpt-oss-120b').trim(),
     updatedAt: Date.now()
   };
   await request('mailroom/config/ai', 'PUT', payload);
@@ -785,7 +785,7 @@ export async function saveAIConfig({ apiKey = '', model = '' }) {
 export async function callGroqAI({ apiKey, model, messages }) {
   const key = (apiKey || '').trim();
   if (!key) throw new Error('Groq API Key is required. Please enter your Groq API key.');
-  const chosenModel = model || 'llama-3.3-70b-versatile';
+  const chosenModel = model || 'openai/gpt-oss-120b';
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {

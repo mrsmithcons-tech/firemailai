@@ -1714,7 +1714,7 @@ async function getActiveAIConfig() {
     return {
       provider: 'groq',
       apiKey: '',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       isConfigured: false
     };
   }
@@ -1723,7 +1723,7 @@ async function getActiveAIConfig() {
 async function updateAICleanerUI() {
   const config = await getActiveAIConfig();
   if ($('ai-cleaner-current-model')) {
-    $('ai-cleaner-current-model').innerHTML = `<span data-icon="bot"></span> Groq: ${esc(config.model || 'llama-3.3-70b-versatile')}`;
+    $('ai-cleaner-current-model').innerHTML = `<span data-icon="bot"></span> Groq: ${esc(config.model || 'openai/gpt-oss-120b')}`;
     hydrateIcons($('ai-cleaner-current-model'));
   }
   if ($('ai-status-badge')) {
@@ -1731,7 +1731,7 @@ async function updateAICleanerUI() {
     $('ai-status-badge').className = 'account-status connected';
   }
   if ($('ai-model-label')) {
-    $('ai-model-label').textContent = `Provider: Groq · Model: ${config.model || 'llama-3.3-70b-versatile'}`;
+    $('ai-model-label').textContent = `Provider: Groq · Model: ${config.model || 'openai/gpt-oss-120b'}`;
   }
 }
 
@@ -1754,7 +1754,17 @@ async function openAIConfigDialog() {
   const config = await getActiveAIConfig();
 
   if ($('groq-api-key')) $('groq-api-key').value = config.apiKey || '';
-  if ($('groq-model')) $('groq-model').value = config.model || 'llama-3.3-70b-versatile';
+  if ($('groq-model')) {
+    const isStandard = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'].includes(config.model);
+    if (config.model && !isStandard) {
+      $('groq-model').value = 'custom';
+      $('groq-custom-model').value = config.model;
+      $('groq-custom-model-group').hidden = false;
+    } else {
+      $('groq-model').value = config.model || 'openai/gpt-oss-120b';
+      $('groq-custom-model-group').hidden = true;
+    }
+  }
 
   $('ai-config-dialog').showModal();
 }
@@ -1763,7 +1773,8 @@ async function handleAIConfigSubmit(event) {
   event.preventDefault();
   notice('ai-config-notice');
   const apiKey = $('groq-api-key').value.trim();
-  const model = $('groq-model').value;
+  const selectVal = $('groq-model').value;
+  const model = selectVal === 'custom' ? $('groq-custom-model').value.trim() : selectVal;
 
   const button = event.submitter;
   button.disabled = true;
@@ -1798,7 +1809,7 @@ async function runAIInboxScan() {
   startBtn.disabled = true;
   $('ai-scan-progress').hidden = false;
   $('ai-results-container').hidden = true;
-  $('ai-scan-status-text').textContent = `Analyzing inbox with Groq AI (${config.model || 'llama-3.3-70b-versatile'})...`;
+  $('ai-scan-status-text').textContent = `Analyzing inbox with Groq AI (${config.model || 'openai/gpt-oss-120b'})...`;
 
   try {
     let candidateEmails = [];
@@ -1983,6 +1994,12 @@ if ($('ai-start-scan-btn')) $('ai-start-scan-btn').addEventListener('click', run
 if ($('ai-toggle-all-useless')) $('ai-toggle-all-useless').addEventListener('click', toggleAllUselessSelection);
 if ($('ai-trash-selected-btn')) $('ai-trash-selected-btn').addEventListener('click', trashSelectedUselessEmails);
 if ($('ai-config-form')) $('ai-config-form').addEventListener('submit', handleAIConfigSubmit);
+
+if ($('groq-model')) {
+  $('groq-model').addEventListener('change', () => {
+    $('groq-custom-model-group').hidden = $('groq-model').value !== 'custom';
+  });
+}
 
 if ($('toggle-groq-key')) {
   $('toggle-groq-key').addEventListener('click', () => {

@@ -216,7 +216,7 @@
             </div>
             <div class="ai-status-box">
               <span class="account-status" id="ai-status-badge">NOT CONFIGURED</span>
-              <span id="ai-model-label" class="field-hint" style="margin:0">Model: llama-3.3-70b-versatile</span>
+              <span id="ai-model-label" class="field-hint" style="margin:0">Model: openai/gpt-oss-120b</span>
             </div>
             <div class="settings-actions-row" style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
               <button id="open-ai-cleaner-settings-btn" type="button" class="button primary small"><span data-icon="sparkles"></span> Run AI Cleaner</button>
@@ -582,10 +582,10 @@
     <!-- AI Header Summary Banner -->
     <div class="ai-cleaner-hero">
       <div class="ai-cleaner-hero-text">
-        <p>Analyze linked Gmail accounts with Groq Llama 3.3 AI to <strong>keep only important emails</strong> and <strong>move useless marketing, promotional blasts, and newsletter clutter to Trash</strong>.</p>
+        <p>Analyze linked Gmail accounts with Groq Flagship AI to <strong>keep only important emails</strong> and <strong>move useless marketing, promotional blasts, and newsletter clutter to Trash</strong>.</p>
       </div>
       <div class="ai-cleaner-hero-config">
-        <span id="ai-cleaner-current-model" class="ai-model-pill"><span data-icon="bot"></span> Groq: llama-3.3-70b-versatile</span>
+        <span id="ai-cleaner-current-model" class="ai-model-pill"><span data-icon="bot"></span> Groq: openai/gpt-oss-120b</span>
         <button id="ai-open-settings-shortcut" type="button" class="button small secondary"><span data-icon="settings"></span> Configure Groq Key</button>
       </div>
     </div>
@@ -683,7 +683,7 @@
         <button type="button" class="icon-button" data-close="ai-config-dialog" data-icon="x" aria-label="Close Groq AI config"></button>
       </div>
 
-      <p class="field-hint" style="margin-top:0">Firemail AI uses high-speed Groq Llama 3.3 intelligence to clean clutter, keep important messages, and trash useless emails.</p>
+      <p class="field-hint" style="margin-top:0">Firemail AI uses high-speed Groq AI intelligence to clean clutter, keep important messages, and trash useless emails.</p>
 
       <!-- Groq Settings -->
       <div id="groq-config-section">
@@ -692,14 +692,19 @@
           <input id="groq-api-key" type="password" placeholder="gsk_..." required autocomplete="off">
           <button type="button" class="icon-button" id="toggle-groq-key" data-icon="eye" aria-label="Toggle Groq Key visibility"></button>
         </div>
-        <p class="field-hint" style="margin:4px 0 12px">Free, sub-second Llama 3.3 engine from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.</p>
+        <p class="field-hint" style="margin:4px 0 12px">Free, sub-second engine from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.</p>
 
         <label for="groq-model">Groq AI Model</label>
         <select id="groq-model" class="styled-select">
-          <option value="llama-3.3-70b-versatile" selected>llama-3.3-70b-versatile (Recommended - 70B Fast &amp; Smart)</option>
-          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Ultra Instant)</option>
-          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (MoE Architecture)</option>
+          <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b (Recommended - 120B Flagship Intelligence)</option>
+          <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Fast &amp; Instant - 20B Engine)</option>
+          <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b (Qwen 27B Architecture)</option>
+          <option value="custom">Custom Model (enter model ID)</option>
         </select>
+        <div id="groq-custom-model-group" hidden style="margin-top:8px">
+          <label for="groq-custom-model">Custom Groq Model ID</label>
+          <input id="groq-custom-model" type="text" placeholder="e.g. openai/gpt-oss-120b">
+        </div>
       </div>
 
       <div id="ai-config-notice" class="notice" hidden></div>
