@@ -1856,6 +1856,8 @@ async function runAIInboxScan() {
       body: {
         provider: config.provider,
         apiKey: config.apiKey,
+        groqApiKey: config.groqApiKey,
+        openRouterApiKey: config.openRouterApiKey,
         model: config.model,
         emails: scanBatch
       }

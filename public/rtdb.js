@@ -913,7 +913,13 @@ Do not include any conversational filler, markdown fences, or extra text. Output
       rawText = await callGroqAI({ apiKey, model, messages });
     } catch (err) {
       console.warn('Groq failed, attempting OpenRouter fallback:', err.message);
-      rawText = await callOpenRouterAI({ apiKey: DEFAULT_OPENROUTER_KEY, model: 'google/gemini-2.0-flash-exp:free', messages });
+      const conf = await getAIConfig();
+      const fallbackKey = openRouterApiKey || conf.openRouterApiKey || (conf.provider === 'openrouter' ? conf.apiKey : '');
+      if (fallbackKey) {
+        rawText = await callOpenRouterAI({ apiKey: fallbackKey, model: 'google/gemini-2.0-flash-exp:free', messages });
+      } else {
+        throw err;
+      }
     }
   }
 
