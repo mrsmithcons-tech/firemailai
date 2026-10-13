@@ -273,7 +273,7 @@ function clearPrivateUI() {
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close('cancel');
   for (const id of ['message-list', 'reader', 'settings-accounts', 'account-nav', 'audit-list', 'compose-attachments', 'toast-container']) $(id).replaceChildren();
   for (const form of document.querySelectorAll('form')) form.reset();
-  $('revealed-password').value = ''; $('password-email').textContent = ''; $('profile-email').textContent = '';
+  clearRevealedPasswords();
   $('search').value = ''; $('compose-body').value = ''; $('compose-from').replaceChildren(); $('account-filter').replaceChildren();
   $('inbox-errors').replaceChildren(); $('inbox-errors').hidden = true;
   state.search = ''; state.filter = 'all'; state.settings = false; state.loading = false; state.oauthPending = false;
@@ -468,9 +468,10 @@ function renderMessages() {
 
   if (!visibleList.length) {
     const first = !connectedAccounts().length;
-    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.aiImportantOnly ? 'No important emails matching filter' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.aiImportantOnly ? 'Click "✨ AI Cleaner" to analyze emails across all linked accounts with Groq / OpenRouter AI.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : state.aiImportantOnly ? '<button class="button primary" id="empty-run-ai-btn">Run AI Cleaner</button>' : ''}</div>`;
-    if ($('empty-run-ai-btn')) {
-      $('empty-run-ai-btn').addEventListener('click', openAICleanerDialog);
+    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.aiImportantOnly ? 'No important emails matching filter' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.aiImportantOnly ? 'Click "✨ AI Cleaner" to analyze emails across all linked accounts with Groq / OpenRouter AI.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : state.aiImportantOnly ? '<button class="button primary" data-run-ai>Run AI Cleaner</button>' : ''}</div>`;
+    const emptyBtn = document.querySelector('[data-run-ai]');
+    if (emptyBtn) {
+      emptyBtn.addEventListener('click', openAICleanerDialog);
     }
     return;
   }
