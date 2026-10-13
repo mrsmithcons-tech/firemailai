@@ -148,7 +148,7 @@
           </div>
         </div>
         <form class="searchbar" id="search-form"><span data-icon="search"></span><input id="search" type="search" autocomplete="off" placeholder="Search mail — try from:someone or has:attachment" aria-label="Search Gmail"><span class="search-key">/</span><button class="button small secondary" type="submit">Search</button></form>
-        <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button><button id="ai-important-toggle" class="filter-pill ai-important-pill" type="button" title="Filter to show only important emails"><span data-icon="sparkles"></span> Important Only</button><button id="ai-cleaner-btn" class="filter-pill ai-cleaner-pill" type="button" title="Clean inbox from useless mails with OpenRouter AI"><span data-icon="zap"></span> ✨ AI Cleaner</button><button id="select-mode-toggle" class="filter-pill select-pill" type="button"><span data-icon="check"></span> <span id="select-mode-label">Select</span></button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
+        <div class="mail-toolbar"><div class="filter-pills"><button class="filter-pill active" data-filter="all">All messages</button><button class="filter-pill" data-filter="unread">Unread</button><button id="ai-important-toggle" class="filter-pill ai-important-pill" type="button" title="Filter to show only important emails"><span data-icon="sparkles"></span> Important Only</button><button id="ai-cleaner-btn" class="filter-pill ai-cleaner-pill" type="button" title="Clean inbox from useless mails with Groq AI"><span data-icon="zap"></span> ✨ AI Cleaner</button><button id="select-mode-toggle" class="filter-pill select-pill" type="button"><span data-icon="check"></span> <span id="select-mode-label">Select</span></button></div><div class="toolbar-actions"><span id="message-count">0 loaded</span><button id="refresh-button" class="icon-button" data-icon="refresh" aria-label="Refresh inbox"></button><select id="account-filter" aria-label="Filter by Gmail account"><option value="all">All accounts</option></select></div></div>
 
         <!-- Cool Live Resync Progress Bar & Timer Widget -->
         <div id="sync-widget" class="sync-widget" role="region" aria-label="Inbox Resync Status">
@@ -210,13 +210,13 @@
             <div class="card-heading">
               <div>
                 <h2>AI Inbox Cleaner</h2>
-                <p>OpenRouter AI integration to filter out spam, ads, and keep important emails.</p>
+                <p>Groq AI integration to filter out spam, ads, and keep important emails.</p>
               </div>
               <span data-icon="zap"></span>
             </div>
             <div class="ai-status-box">
               <span class="account-status" id="ai-status-badge">NOT CONFIGURED</span>
-              <span id="ai-model-label" class="field-hint" style="margin:0">Model: google/gemini-2.0-flash-exp:free</span>
+              <span id="ai-model-label" class="field-hint" style="margin:0">Model: llama-3.3-70b-versatile</span>
             </div>
             <div class="settings-actions-row" style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
               <button id="open-ai-cleaner-settings-btn" type="button" class="button primary small"><span data-icon="sparkles"></span> Run AI Cleaner</button>
@@ -569,11 +569,11 @@
     </form>
   </dialog>
 
-  <!-- OpenRouter AI Cleaner Dialog -->
+  <!-- Groq AI Cleaner Dialog -->
   <dialog id="ai-cleaner-dialog" class="large-dialog ai-cleaner-modal">
     <div class="dialog-header">
       <div class="dialog-header-title">
-        <span class="eyebrow"><span data-icon="sparkles"></span> OPENROUTER AI ENGINE</span>
+        <span class="eyebrow"><span data-icon="zap"></span> GROQ AI ENGINE</span>
         <h2>Firemail AI Inbox Cleaner</h2>
       </div>
       <button type="button" class="icon-button" data-close="ai-cleaner-dialog" data-icon="x" aria-label="Close AI cleaner"></button>
@@ -582,11 +582,11 @@
     <!-- AI Header Summary Banner -->
     <div class="ai-cleaner-hero">
       <div class="ai-cleaner-hero-text">
-        <p>Analyze linked Gmail accounts with OpenRouter AI to <strong>keep only important emails</strong> and <strong>move useless marketing, promotional blasts, and newsletter clutter to Trash</strong>.</p>
+        <p>Analyze linked Gmail accounts with Groq Llama 3.3 AI to <strong>keep only important emails</strong> and <strong>move useless marketing, promotional blasts, and newsletter clutter to Trash</strong>.</p>
       </div>
       <div class="ai-cleaner-hero-config">
-        <span id="ai-cleaner-current-model" class="ai-model-pill"><span data-icon="bot"></span> google/gemini-2.0-flash-exp:free</span>
-        <button id="ai-open-settings-shortcut" type="button" class="button small secondary"><span data-icon="settings"></span> Configure API Key</button>
+        <span id="ai-cleaner-current-model" class="ai-model-pill"><span data-icon="bot"></span> Groq: llama-3.3-70b-versatile</span>
+        <button id="ai-open-settings-shortcut" type="button" class="button small secondary"><span data-icon="settings"></span> Configure Groq Key</button>
       </div>
     </div>
 
@@ -607,7 +607,7 @@
         </select>
       </div>
       <button id="ai-start-scan-btn" type="button" class="button primary ai-scan-btn">
-        <span data-icon="zap"></span> Run AI Inbox Scan
+        <span data-icon="zap"></span> Run Groq AI Scan
       </button>
     </div>
 
@@ -617,7 +617,7 @@
         <span data-icon="refresh" class="spin"></span>
       </div>
       <div class="ai-scan-progress-text">
-        <h3 id="ai-scan-status-text">OpenRouter AI is inspecting your emails...</h3>
+        <h3 id="ai-scan-status-text">Groq AI is inspecting your emails...</h3>
         <p class="field-hint" style="margin:4px 0 0">Categorizing important vs. promotional clutter across all linked accounts</p>
       </div>
     </div>
@@ -641,7 +641,7 @@
 
       <div class="ai-verdict-banner" id="ai-verdict-banner">
         <span data-icon="sparkles"></span>
-        <span id="ai-verdict-text">AI scan complete.</span>
+        <span id="ai-verdict-text">Groq AI scan complete.</span>
       </div>
 
       <!-- Useless Emails List to Review and Delete -->
@@ -672,39 +672,29 @@
     <div id="ai-cleaner-notice" class="notice" hidden></div>
   </dialog>
 
-  <!-- OpenRouter AI Configuration Dialog -->
+  <!-- Groq AI Configuration Dialog -->
   <dialog id="ai-config-dialog" class="small-dialog">
     <form id="ai-config-form">
       <div class="dialog-header">
         <div>
-          <span class="eyebrow"><span data-icon="zap"></span> AI ENGINE CONFIGURATION</span>
-          <h2>Groq &amp; OpenRouter AI Setup</h2>
+          <span class="eyebrow"><span data-icon="zap"></span> GROQ AI CONFIGURATION</span>
+          <h2>Groq AI Setup</h2>
         </div>
-        <button type="button" class="icon-button" data-close="ai-config-dialog" data-icon="x" aria-label="Close AI config"></button>
+        <button type="button" class="icon-button" data-close="ai-config-dialog" data-icon="x" aria-label="Close Groq AI config"></button>
       </div>
 
-      <p class="field-hint" style="margin-top:0">Firemail AI uses high-speed AI engines (Groq &amp; OpenRouter) to clean clutter, keep important messages, and trash useless emails.</p>
-
-      <label>Active AI Provider</label>
-      <div style="display:flex;gap:16px;margin:6px 0 14px;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-          <input type="radio" name="ai-provider" value="groq" checked> Groq (Ultra Fast Llama 3.3)
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-          <input type="radio" name="ai-provider" value="openrouter"> OpenRouter (Gemini / Multi-Model)
-        </label>
-      </div>
+      <p class="field-hint" style="margin-top:0">Firemail AI uses high-speed Groq Llama 3.3 intelligence to clean clutter, keep important messages, and trash useless emails.</p>
 
       <!-- Groq Settings -->
       <div id="groq-config-section">
         <label for="groq-api-key">Groq API Key</label>
         <div class="password-field">
-          <input id="groq-api-key" type="password" placeholder="gsk_..." autocomplete="off">
+          <input id="groq-api-key" type="password" placeholder="gsk_..." required autocomplete="off">
           <button type="button" class="icon-button" id="toggle-groq-key" data-icon="eye" aria-label="Toggle Groq Key visibility"></button>
         </div>
         <p class="field-hint" style="margin:4px 0 12px">Free, sub-second Llama 3.3 engine from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.</p>
 
-        <label for="groq-model">Groq Model</label>
+        <label for="groq-model">Groq AI Model</label>
         <select id="groq-model" class="styled-select">
           <option value="llama-3.3-70b-versatile" selected>llama-3.3-70b-versatile (Recommended - 70B Fast &amp; Smart)</option>
           <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Ultra Instant)</option>
@@ -712,33 +702,9 @@
         </select>
       </div>
 
-      <!-- OpenRouter Settings -->
-      <div id="openrouter-config-section" hidden style="margin-top:12px;">
-        <label for="openrouter-api-key">OpenRouter API Key</label>
-        <div class="password-field">
-          <input id="openrouter-api-key" type="password" placeholder="sk-or-v1-..." autocomplete="off">
-          <button type="button" class="icon-button" id="toggle-openrouter-key" data-icon="eye" aria-label="Toggle OpenRouter Key visibility"></button>
-        </div>
-        <p class="field-hint" style="margin:4px 0 12px">Multi-model API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</p>
-
-        <label for="openrouter-model">OpenRouter Model</label>
-        <select id="openrouter-model" class="styled-select">
-          <option value="google/gemini-2.0-flash-exp:free" selected>google/gemini-2.0-flash-exp:free (Fast &amp; Free)</option>
-          <option value="meta-llama/llama-3.3-70b-instruct:free">meta-llama/llama-3.3-70b-instruct:free (Llama 3.3 Free)</option>
-          <option value="openai/gpt-4o-mini">openai/gpt-4o-mini (OpenAI Fast)</option>
-          <option value="deepseek/deepseek-chat">deepseek/deepseek-chat (DeepSeek V3)</option>
-          <option value="custom">Custom Model (enter below)</option>
-        </select>
-
-        <div id="custom-model-group" hidden style="margin-top:8px">
-          <label for="openrouter-custom-model">Custom Model ID</label>
-          <input id="openrouter-custom-model" type="text" placeholder="e.g. mistralai/mistral-small-24b-instruct-2501:free">
-        </div>
-      </div>
-
       <div id="ai-config-notice" class="notice" hidden></div>
       <div class="modal-footer" style="margin-top:16px">
-        <button type="submit" class="button primary wide">Save AI Configuration</button>
+        <button type="submit" class="button primary wide">Save Groq AI Configuration</button>
       </div>
     </form>
   </dialog>

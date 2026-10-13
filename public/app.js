@@ -468,7 +468,7 @@ function renderMessages() {
 
   if (!visibleList.length) {
     const first = !connectedAccounts().length;
-    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.aiImportantOnly ? 'No important emails matching filter' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.aiImportantOnly ? 'Click "✨ AI Cleaner" to analyze emails across all linked accounts with Groq / OpenRouter AI.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : state.aiImportantOnly ? '<button class="button primary" data-run-ai>Run AI Cleaner</button>' : ''}</div>`;
+    $('message-list').innerHTML = `<div class="empty-state"><div class="empty-icon">${icon(first ? 'mail' : 'inbox')}</div><h3>${first ? 'Your inboxes belong here' : state.aiImportantOnly ? 'No important emails matching filter' : state.search || state.filter === 'unread' ? 'No matching messages' : 'A little breathing room'}</h3><p>${first ? 'Connect a Gmail account once, then read and reply from this private workspace.' : state.aiImportantOnly ? 'Click "✨ AI Cleaner" to analyze emails across all linked accounts with Groq AI.' : state.search ? 'Try a different search. Gmail search operators work here too.' : 'There are no messages in this folder right now.'}</p>${first ? '<button class="button primary" data-connect-first>Connect your first Gmail</button>' : state.aiImportantOnly ? '<button class="button primary" data-run-ai>Run AI Cleaner</button>' : ''}</div>`;
     const emptyBtn = document.querySelector('[data-run-ai]');
     if (emptyBtn) {
       emptyBtn.addEventListener('click', openAICleanerDialog);
@@ -1702,7 +1702,7 @@ if ($('copy-redirect-uri-btn')) $('copy-redirect-uri-btn').addEventListener('cli
 });
 
 // ==========================================================================
-// AI Cleaner & Provider Setup (Groq + OpenRouter)
+// AI Cleaner & Groq AI Engine Setup
 // ==========================================================================
 async function getActiveAIConfig() {
   if (state.aiConfig) return state.aiConfig;
@@ -1714,8 +1714,6 @@ async function getActiveAIConfig() {
     return {
       provider: 'groq',
       apiKey: '',
-      groqApiKey: '',
-      openRouterApiKey: '',
       model: 'llama-3.3-70b-versatile',
       isConfigured: false
     };
@@ -1724,17 +1722,16 @@ async function getActiveAIConfig() {
 
 async function updateAICleanerUI() {
   const config = await getActiveAIConfig();
-  const providerLabel = config.provider === 'openrouter' ? 'OpenRouter' : 'Groq';
   if ($('ai-cleaner-current-model')) {
-    $('ai-cleaner-current-model').innerHTML = `<span data-icon="bot"></span> ${providerLabel}: ${esc(config.model || 'llama-3.3-70b-versatile')}`;
+    $('ai-cleaner-current-model').innerHTML = `<span data-icon="bot"></span> Groq: ${esc(config.model || 'llama-3.3-70b-versatile')}`;
     hydrateIcons($('ai-cleaner-current-model'));
   }
   if ($('ai-status-badge')) {
-    $('ai-status-badge').textContent = `${providerLabel.toUpperCase()} ACTIVE`;
+    $('ai-status-badge').textContent = 'GROQ ACTIVE';
     $('ai-status-badge').className = 'account-status connected';
   }
   if ($('ai-model-label')) {
-    $('ai-model-label').textContent = `Provider: ${providerLabel} · Model: ${config.model || 'llama-3.3-70b-versatile'}`;
+    $('ai-model-label').textContent = `Provider: Groq · Model: ${config.model || 'llama-3.3-70b-versatile'}`;
   }
 }
 
@@ -1756,46 +1753,17 @@ async function openAIConfigDialog() {
   notice('ai-config-notice');
   const config = await getActiveAIConfig();
 
-  const radio = document.querySelector(`input[name="ai-provider"][value="${config.provider || 'groq'}"]`);
-  if (radio) radio.checked = true;
+  if ($('groq-api-key')) $('groq-api-key').value = config.apiKey || '';
+  if ($('groq-model')) $('groq-model').value = config.model || 'llama-3.3-70b-versatile';
 
-  if ($('groq-api-key')) $('groq-api-key').value = config.groqApiKey || '';
-  if ($('groq-model')) $('groq-model').value = config.model && config.provider === 'groq' ? config.model : 'llama-3.3-70b-versatile';
-  if ($('openrouter-api-key')) $('openrouter-api-key').value = config.openRouterApiKey || '';
-  if ($('openrouter-model')) {
-    const isStandard = ['google/gemini-2.0-flash-exp:free', 'meta-llama/llama-3.3-70b-instruct:free', 'openai/gpt-4o-mini', 'deepseek/deepseek-chat'].includes(config.model);
-    if (config.provider === 'openrouter' && !isStandard && config.model) {
-      $('openrouter-model').value = 'custom';
-      $('openrouter-custom-model').value = config.model;
-      $('custom-model-group').hidden = false;
-    } else {
-      $('openrouter-model').value = config.model && config.provider === 'openrouter' ? config.model : 'google/gemini-2.0-flash-exp:free';
-      $('custom-model-group').hidden = true;
-    }
-  }
-
-  updateAIConfigSectionVisibility();
   $('ai-config-dialog').showModal();
-}
-
-function updateAIConfigSectionVisibility() {
-  const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'groq';
-  if ($('groq-config-section')) $('groq-config-section').hidden = provider !== 'groq';
-  if ($('openrouter-config-section')) $('openrouter-config-section').hidden = provider !== 'openrouter';
 }
 
 async function handleAIConfigSubmit(event) {
   event.preventDefault();
   notice('ai-config-notice');
-  const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'groq';
-  const groqApiKey = $('groq-api-key').value.trim();
-  const groqModel = $('groq-model').value;
-  const openRouterApiKey = $('openrouter-api-key').value.trim();
-  const openRouterSelect = $('openrouter-model').value;
-  const openRouterModel = openRouterSelect === 'custom' ? $('openrouter-custom-model').value.trim() : openRouterSelect;
-
-  const model = provider === 'groq' ? groqModel : openRouterModel;
-  const apiKey = provider === 'groq' ? groqApiKey : openRouterApiKey;
+  const apiKey = $('groq-api-key').value.trim();
+  const model = $('groq-model').value;
 
   const button = event.submitter;
   button.disabled = true;
@@ -1803,16 +1771,14 @@ async function handleAIConfigSubmit(event) {
     const saved = await api('/api/ai/config', {
       method: 'POST',
       body: {
-        provider,
+        provider: 'groq',
         apiKey,
-        groqApiKey,
-        openRouterApiKey,
         model
       }
     });
     state.aiConfig = saved;
     $('ai-config-dialog').close();
-    toast(`AI Engine updated: ${provider === 'groq' ? 'Groq' : 'OpenRouter'} (${model})`);
+    toast(`Groq AI configured (${model})`);
     await updateAICleanerUI();
   } catch (err) {
     report(err, 'ai-config-notice');
@@ -1832,7 +1798,7 @@ async function runAIInboxScan() {
   startBtn.disabled = true;
   $('ai-scan-progress').hidden = false;
   $('ai-results-container').hidden = true;
-  $('ai-scan-status-text').textContent = `Analyzing inbox with ${config.provider === 'openrouter' ? 'OpenRouter' : 'Groq'} (${config.model})...`;
+  $('ai-scan-status-text').textContent = `Analyzing inbox with Groq AI (${config.model || 'llama-3.3-70b-versatile'})...`;
 
   try {
     let candidateEmails = [];
@@ -1854,10 +1820,8 @@ async function runAIInboxScan() {
     const result = await api('/api/ai/classify', {
       method: 'POST',
       body: {
-        provider: config.provider,
+        provider: 'groq',
         apiKey: config.apiKey,
-        groqApiKey: config.groqApiKey,
-        openRouterApiKey: config.openRouterApiKey,
         model: config.model,
         emails: scanBatch
       }
@@ -2020,25 +1984,9 @@ if ($('ai-toggle-all-useless')) $('ai-toggle-all-useless').addEventListener('cli
 if ($('ai-trash-selected-btn')) $('ai-trash-selected-btn').addEventListener('click', trashSelectedUselessEmails);
 if ($('ai-config-form')) $('ai-config-form').addEventListener('submit', handleAIConfigSubmit);
 
-document.querySelectorAll('input[name="ai-provider"]').forEach(r => {
-  r.addEventListener('change', updateAIConfigSectionVisibility);
-});
-
-if ($('openrouter-model')) {
-  $('openrouter-model').addEventListener('change', () => {
-    $('custom-model-group').hidden = $('openrouter-model').value !== 'custom';
-  });
-}
-
 if ($('toggle-groq-key')) {
   $('toggle-groq-key').addEventListener('click', () => {
     $('groq-api-key').type = $('groq-api-key').type === 'password' ? 'text' : 'password';
-  });
-}
-
-if ($('toggle-openrouter-key')) {
-  $('toggle-openrouter-key').addEventListener('click', () => {
-    $('openrouter-api-key').type = $('openrouter-api-key').type === 'password' ? 'text' : 'password';
   });
 }
 

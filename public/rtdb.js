@@ -747,21 +747,16 @@ export async function saveOAuthAccount({ email, label, accessToken, refreshToken
   return payload;
 }
 
-// AI Integration APIs (Groq & OpenRouter Working Engines)
+// AI Integration APIs (Groq Ultra-Fast AI Engine)
 export async function getAIConfig() {
   try {
     const config = await request('mailroom/config/ai');
-    if (config && (config.apiKey || config.groqApiKey || config.openRouterApiKey)) {
-      const provider = config.provider || 'groq';
-      const activeKey = provider === 'openrouter'
-        ? (config.openRouterApiKey || config.apiKey || '')
-        : (config.groqApiKey || config.apiKey || '');
+    if (config && (config.apiKey || config.groqApiKey)) {
+      const activeKey = config.apiKey || config.groqApiKey || '';
       return {
-        provider,
+        provider: 'groq',
         apiKey: activeKey,
-        groqApiKey: config.groqApiKey || '',
-        openRouterApiKey: config.openRouterApiKey || '',
-        model: config.model || (provider === 'openrouter' ? 'google/gemini-2.0-flash-exp:free' : 'llama-3.3-70b-versatile'),
+        model: config.model || 'llama-3.3-70b-versatile',
         isConfigured: Boolean(activeKey),
         updatedAt: config.updatedAt
       };
@@ -770,36 +765,26 @@ export async function getAIConfig() {
   return {
     provider: 'groq',
     apiKey: '',
-    groqApiKey: '',
-    openRouterApiKey: '',
     model: 'llama-3.3-70b-versatile',
     isConfigured: false
   };
 }
 
-export async function saveAIConfig({ provider = 'groq', apiKey = '', groqApiKey = '', openRouterApiKey = '', model = '' }) {
-  const chosenProvider = provider === 'openrouter' ? 'openrouter' : 'groq';
-  const finalGroqKey = (groqApiKey || (chosenProvider === 'groq' ? apiKey : '')).trim();
-  const finalOpenRouterKey = (openRouterApiKey || (chosenProvider === 'openrouter' ? apiKey : '')).trim();
-  const activeKey = chosenProvider === 'openrouter' ? finalOpenRouterKey : finalGroqKey;
-  const defaultModel = chosenProvider === 'openrouter' ? 'google/gemini-2.0-flash-exp:free' : 'llama-3.3-70b-versatile';
-
+export async function saveAIConfig({ apiKey = '', model = '' }) {
   const payload = {
-    provider: chosenProvider,
-    apiKey: activeKey,
-    groqApiKey: finalGroqKey,
-    openRouterApiKey: finalOpenRouterKey,
-    model: (model || defaultModel).trim(),
+    provider: 'groq',
+    apiKey: apiKey.trim(),
+    model: (model || 'llama-3.3-70b-versatile').trim(),
     updatedAt: Date.now()
   };
   await request('mailroom/config/ai', 'PUT', payload);
-  await logAudit('ai.config_updated', `${payload.provider}:${payload.model}`);
+  await logAudit('ai.config_updated', `groq:${payload.model}`);
   return payload;
 }
 
 export async function callGroqAI({ apiKey, model, messages }) {
   const key = (apiKey || '').trim();
-  if (!key) throw new Error('Groq API Key is required. Please configure your Groq API key.');
+  if (!key) throw new Error('Groq API Key is required. Please enter your Groq API key.');
   const chosenModel = model || 'llama-3.3-70b-versatile';
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -829,40 +814,7 @@ export async function callGroqAI({ apiKey, model, messages }) {
   return choice;
 }
 
-export async function callOpenRouterAI({ apiKey, model, messages }) {
-  const key = (apiKey || '').trim();
-  if (!key) throw new Error('OpenRouter API Key is required. Please configure your OpenRouter API key.');
-  const chosenModel = model || 'google/gemini-2.0-flash-exp:free';
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'HTTP-Referer': 'https://firemailai.web.app',
-      'X-Title': 'Firemail AI Inbox Cleaner',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: chosenModel,
-      messages,
-      temperature: 0.2
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    let msg = `OpenRouter API error (${res.status})`;
-    try {
-      const parsed = JSON.parse(errText);
-      if (parsed.error?.message) msg = parsed.error.message;
-    } catch {}
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const choice = data.choices?.[0]?.message?.content;
-  if (!choice) throw new Error('No response content returned from OpenRouter AI.');
-  return choice;
-}
-
-export async function classifyEmailsWithAI({ provider = 'groq', apiKey, model, emails }) {
+export async function classifyEmailsWithAI({ apiKey, model, emails }) {
   if (!Array.isArray(emails) || !emails.length) {
     return { classifications: [], summary: 'No emails to analyze.' };
   }
@@ -876,7 +828,7 @@ export async function classifyEmailsWithAI({ provider = 'groq', apiKey, model, e
     snippet: (m.snippet || '').slice(0, 160)
   }));
 
-  const systemPrompt = `You are Firemail AI Triage & Inbox Cleaner.
+  const systemPrompt = `You are Firemail AI Triage & Inbox Cleaner powered by Groq.
 Your goal is to inspect incoming emails and classify each one to help users clean out useless clutter and keep only important emails.
 
 CRITERIA:
@@ -904,24 +856,7 @@ Do not include any conversational filler, markdown fences, or extra text. Output
     { role: 'user', content: userContent }
   ];
 
-  let rawText = '';
-  if (provider === 'openrouter') {
-    rawText = await callOpenRouterAI({ apiKey, model, messages });
-  } else {
-    // Default to Groq (ultra fast)
-    try {
-      rawText = await callGroqAI({ apiKey, model, messages });
-    } catch (err) {
-      console.warn('Groq failed, attempting OpenRouter fallback:', err.message);
-      const conf = await getAIConfig();
-      const fallbackKey = openRouterApiKey || conf.openRouterApiKey || (conf.provider === 'openrouter' ? conf.apiKey : '');
-      if (fallbackKey) {
-        rawText = await callOpenRouterAI({ apiKey: fallbackKey, model: 'google/gemini-2.0-flash-exp:free', messages });
-      } else {
-        throw err;
-      }
-    }
-  }
+  const rawText = await callGroqAI({ apiKey, model, messages });
 
   const cleaned = rawText
     .replace(/^```json\s*/i, '')
@@ -939,11 +874,12 @@ Do not include any conversational filler, markdown fences, or extra text. Output
         return JSON.parse(match[0]);
       } catch {}
     }
-    throw new Error('AI returned an unexpected format. Please try again.');
+    throw new Error('Groq AI returned an unexpected format. Please try again.');
   }
 }
 
-// Backward compatible alias
-export const classifyEmailsWithOpenRouter = classifyEmailsWithAI;
+// Groq AI email classifier alias
+export const classifyEmailsWithGroq = classifyEmailsWithAI;
+
 
 
