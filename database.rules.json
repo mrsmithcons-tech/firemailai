@@ -1,6 +1,11 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true
+    ".read": false,
+    ".write": false,
+    "mailroom": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["updatedAt", "createdAt", "date", "folder", "accountId"]
+    }
   }
 }
